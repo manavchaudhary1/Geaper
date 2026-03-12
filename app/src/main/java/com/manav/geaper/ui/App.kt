@@ -2,67 +2,87 @@ package com.manav.geaper.ui
 
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.manav.geaper.viewmodel.StreamViewModel
 import androidx.navigation.compose.*
-import androidx.navigation.compose.rememberNavController
 import androidx.room.Room
 import com.manav.geaper.data.db.AppDatabase
+import com.manav.geaper.data.prefs.AppPreferences
 import com.manav.geaper.data.repository.StreamRepository
 import com.manav.geaper.network.CamsodaApi
 import com.manav.geaper.network.ChaturbateApi
+import com.manav.geaper.recorder.StreamRecorder
 import com.manav.geaper.ui.screens.*
-import com.manav.geaper.viewmodel.StreamViewModelFactory
+import com.manav.geaper.ui.theme.GeaperTheme
+import com.manav.geaper.viewmodel.*
 
 @Composable
 fun App() {
 
-    val navController = rememberNavController()
     val context = LocalContext.current
 
-    val db = Room.databaseBuilder(
-        context,
-        AppDatabase::class.java,
-        "streamers.db"
-    ).build()
+    val prefs = remember { AppPreferences(context) }
 
-    val repository = StreamRepository(
-        db.streamerDao(),
-        ChaturbateApi(),
-        CamsodaApi()
-    )
+    val db = remember {
+        Room.databaseBuilder(context, AppDatabase::class.java, "streamers.db")
+            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .build()
+    }
 
-    val viewModel: StreamViewModel = viewModel(
+    val repository = remember {
+        StreamRepository(
+            context    = context,
+            dao        = db.streamerDao(),
+            presetDao  = db.ffmpegPresetDao(),
+            cbApi      = ChaturbateApi(),
+            csApi      = CamsodaApi(),
+            prefs      = prefs
+        )
+    }
+
+    val streamViewModel: StreamViewModel = viewModel(
         factory = StreamViewModelFactory(repository)
     )
+    val settingsViewModel: SettingsViewModel = viewModel(
+        factory = SettingsViewModelFactory(prefs)
+    )
 
-    Scaffold(
-        bottomBar = {
-            BottomBar(navController)
-        }
-    ) { padding ->
+    // ── Reactive theme prefs ──────────────────────────────────────────────
+    val themeMode    by settingsViewModel.themeMode.collectAsState()
+    val dynamicColor by settingsViewModel.dynamicColor.collectAsState()
 
-        NavHost(
-            navController    = navController,
-            startDestination = "Home",
-            modifier         = Modifier.padding(padding)
-        ) {
+    GeaperTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
 
-            composable("Home") {
-                val streamers by viewModel.streamers.collectAsState(initial = emptyList())
-                HomeScreen(
-                    streamers = streamers,
-                    viewModel = viewModel
-                )
+        val navController = rememberNavController()
+
+        Scaffold(
+            bottomBar = { BottomBar(navController) }
+        ) { padding ->
+
+            NavHost(
+                navController    = navController,
+                startDestination = "Home",
+                modifier         = Modifier.padding(padding)
+            ) {
+
+                composable("Home") {
+                    val streamers by streamViewModel.streamers.collectAsState()
+                    HomeScreen(
+                        streamers = streamers,
+                        viewModel = streamViewModel
+                    )
+                }
+
+                composable("Custom Script") {
+                    CustomScriptScreen(viewModel = streamViewModel)
+                }
+
+                composable("Settings") {
+                    SettingsScreen(viewModel = settingsViewModel)
+                }
             }
-
-            composable("Custom Script") { Screen("Custom Script") }
-            composable("Settings") { Screen("Settings") }
         }
     }
 }

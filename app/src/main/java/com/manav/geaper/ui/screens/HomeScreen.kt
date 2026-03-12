@@ -2,9 +2,9 @@ package com.manav.geaper.ui.screens
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.*
 import androidx.compose.foundation.shape.CircleShape
@@ -12,13 +12,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -33,10 +29,11 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.manav.geaper.data.model.FfmpegPreset
 import com.manav.geaper.data.model.Streamer
 import com.manav.geaper.viewmodel.StreamViewModel
 
-// ── Shared color palette ──────────────────────────────────────────────────────
+// ── Color palette (Material You adaptive + fallback) ──────────────────────────
 private val BackgroundDark = Color(0xFF0D0F14)
 private val SurfaceDark    = Color(0xFF161920)
 private val CardDark       = Color(0xFF1E2229)
@@ -46,6 +43,7 @@ private val TextPrimary    = Color(0xFFECEFF4)
 private val TextSecondary  = Color(0xFF7A8499)
 private val DividerColor   = Color(0xFF252A33)
 private val InputBg        = Color(0xFF1A1E26)
+private val RecordRed      = Color(0xFFFF1744)
 
 private val StatusPublic  = Color(0xFF00E676)
 private val StatusPrivate = Color(0xFFE040FB)
@@ -81,14 +79,28 @@ fun HomeScreen(
     var showSheet    by remember { mutableStateOf(false) }
     val focusManager = LocalFocusManager.current
 
+    val presets by viewModel.presets.collectAsState()
+    val isMonitoring by viewModel.isMonitoring.collectAsState()
+
+    // Recompose recording state every second so indicators stay live
+    var tick by remember { mutableStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            kotlinx.coroutines.delay(1_000)
+            tick++
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize().background(BackgroundDark)) {
 
         Column(modifier = Modifier.fillMaxSize()) {
 
-            val isMonitoring by viewModel.isMonitoring.collectAsState()
             TopBar(
                 streamerCount  = streamers.size,
-                liveCount      = streamers.count { it.status.lowercase() == "public" || it.status.lowercase() == "online" },
+                liveCount      = streamers.count {
+                    it.status.lowercase() in listOf("public", "online")
+                },
+                recordingCount = streamers.count { viewModel.isRecording(it).also { _ -> tick } },
                 isMonitoring   = isMonitoring,
                 onMonitorClick = { viewModel.toggleMonitoring() }
             )
@@ -101,10 +113,16 @@ fun HomeScreen(
                     contentPadding      = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(streamers, key = { it.username }) { streamer ->
+                    items(streamers, key = { it.id }) { streamer ->
+                        val recording = viewModel.isRecording(streamer).also { _ -> tick }
                         StreamerCard(
-                            streamer = streamer,
-                            onDelete = { viewModel.removeStreamer(streamer) }
+                            streamer    = streamer,
+                            isRecording = recording,
+                            onDelete    = { viewModel.removeStreamer(streamer) },
+                            onRecord    = {
+                                if (recording) viewModel.stopRecording(streamer)
+                                else           viewModel.startRecording(streamer)
+                            }
                         )
                     }
                     item { Spacer(modifier = Modifier.height(80.dp)) }
@@ -112,7 +130,7 @@ fun HomeScreen(
             }
         }
 
-        // FAB – bottom right
+        // FAB
         FloatingActionButton(
             onClick        = { showSheet = true },
             modifier       = Modifier.align(Alignment.BottomEnd).padding(20.dp),
@@ -125,7 +143,7 @@ fun HomeScreen(
         }
     }
 
-    // ── Slide-up add panel ────────────────────────────────────────────────────
+    // ── Bottom sheet ──────────────────────────────────────────────────────────
     if (showSheet) {
         ModalBottomSheet(
             onDismissRequest = { showSheet = false; focusManager.clearFocus() },
@@ -133,8 +151,7 @@ fun HomeScreen(
             containerColor   = SheetDark,
             tonalElevation   = 0.dp,
             shape            = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-            dragHandle       = {
-                // Custom header row acts as drag handle
+            dragHandle = {
                 Row(
                     modifier              = Modifier
                         .fillMaxWidth()
@@ -144,28 +161,21 @@ fun HomeScreen(
                 ) {
                     Column {
                         Text(
-                            text          = "ADD STREAMER",
+                            "ADD STREAMER",
                             fontSize      = 13.sp,
                             fontWeight    = FontWeight.Bold,
                             color         = AccentCyan,
                             letterSpacing = 2.sp
                         )
-                        Text(
-                            text     = "Track a new channel",
-                            fontSize = 12.sp,
-                            color    = TextSecondary
-                        )
+                        Text("Track a new channel", fontSize = 12.sp, color = TextSecondary)
                     }
                     IconButton(
                         onClick  = { showSheet = false; focusManager.clearFocus() },
-                        modifier = Modifier
-                            .size(34.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF252A33))
+                        modifier = Modifier.size(34.dp).clip(CircleShape).background(Color(0xFF252A33))
                     ) {
                         Icon(
-                            imageVector        = Icons.Default.Close,
-                            contentDescription = "Close panel",
+                            Icons.Default.Close,
+                            contentDescription = "Close",
                             tint               = TextSecondary,
                             modifier           = Modifier.size(16.dp)
                         )
@@ -174,8 +184,9 @@ fun HomeScreen(
             }
         ) {
             AddPanel(
-                onSave = { site, username ->
-                    viewModel.addStreamer(site, username)
+                presets = presets,
+                onSave  = { site, username, autoRecord, presetId ->
+                    viewModel.addStreamer(site, username, autoRecord, presetId)
                     showSheet = false
                     focusManager.clearFocus()
                 }
@@ -184,13 +195,20 @@ fun HomeScreen(
     }
 }
 
-// ── Add panel content ─────────────────────────────────────────────────────────
+// ── Add panel ─────────────────────────────────────────────────────────────────
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AddPanel(onSave: (String, String) -> Unit) {
+private fun AddPanel(
+    presets: List<FfmpegPreset>,
+    onSave: (String, String, Boolean, Int?) -> Unit
+) {
     val sites          = listOf("chaturbate", "camsoda")
     var username       by remember { mutableStateOf("") }
     var selectedSite   by remember { mutableStateOf(sites[0]) }
+    var autoRecord     by remember { mutableStateOf(false) }
+    var selectedPreset by remember { mutableStateOf<FfmpegPreset?>(null) }
+    var presetExpanded by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val canSave        = username.isNotBlank()
 
@@ -201,12 +219,11 @@ private fun AddPanel(onSave: (String, String) -> Unit) {
             .padding(bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Divider(color = DividerColor, thickness = 1.dp)
+        HorizontalDivider(color = DividerColor, thickness = 1.dp)
         Spacer(modifier = Modifier.height(4.dp))
 
-        // Platform label + tiles
+        // Platform tiles
         Text("PLATFORM", fontSize = 10.sp, color = TextSecondary, letterSpacing = 1.5.sp)
-
         Row(
             modifier              = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -228,13 +245,13 @@ private fun AddPanel(onSave: (String, String) -> Unit) {
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         Text(
-                            text       = if (site == "chaturbate") "CB" else "CS",
+                            if (site == "chaturbate") "CB" else "CS",
                             fontSize   = 20.sp,
                             fontWeight = FontWeight.Black,
                             color      = if (selected) AccentCyan else TextSecondary
                         )
                         Text(
-                            text       = site.replaceFirstChar { it.uppercase() },
+                            site.replaceFirstChar { it.uppercase() },
                             fontSize   = 11.sp,
                             fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
                             color      = if (selected) AccentCyan else TextSecondary
@@ -244,9 +261,8 @@ private fun AddPanel(onSave: (String, String) -> Unit) {
             }
         }
 
-        // Username label + field
+        // Username
         Text("USERNAME", fontSize = 10.sp, color = TextSecondary, letterSpacing = 1.5.sp)
-
         OutlinedTextField(
             value           = username,
             onValueChange   = { username = it },
@@ -257,14 +273,79 @@ private fun AddPanel(onSave: (String, String) -> Unit) {
             colors          = outlinedFieldColors(),
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
             keyboardActions = KeyboardActions(
-                onDone = { if (canSave) onSave(selectedSite, username.trim()) }
+                onDone = { if (canSave) onSave(selectedSite, username.trim(), autoRecord, selectedPreset?.id) }
             )
         )
 
-        Spacer(modifier = Modifier.height(6.dp))
+        // Auto-record toggle
+        Row(
+            modifier          = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(InputBg)
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text("Auto Record", fontSize = 14.sp, color = TextPrimary, fontWeight = FontWeight.Medium)
+                Text("Start recording when streamer goes live", fontSize = 11.sp, color = TextSecondary)
+            }
+            Switch(
+                checked         = autoRecord,
+                onCheckedChange = { autoRecord = it },
+                colors          = SwitchDefaults.colors(
+                    checkedThumbColor  = BackgroundDark,
+                    checkedTrackColor  = AccentCyan
+                )
+            )
+        }
+
+        // FFmpeg preset picker (optional)
+        if (presets.isNotEmpty()) {
+            Text("FFMPEG PRESET", fontSize = 10.sp, color = TextSecondary, letterSpacing = 1.5.sp)
+            ExposedDropdownMenuBox(
+                expanded        = presetExpanded,
+                onExpandedChange = { presetExpanded = !presetExpanded }
+            ) {
+                OutlinedTextField(
+                    value        = selectedPreset?.name ?: "None (plain recording)",
+                    onValueChange = {},
+                    readOnly     = true,
+                    modifier     = Modifier.fillMaxWidth().menuAnchor(),
+                    shape        = RoundedCornerShape(12.dp),
+                    colors       = outlinedFieldColors(),
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(presetExpanded) }
+                )
+                ExposedDropdownMenu(
+                    expanded        = presetExpanded,
+                    onDismissRequest = { presetExpanded = false },
+                    modifier        = Modifier.background(CardDark)
+                ) {
+                    DropdownMenuItem(
+                        text    = { Text("None", color = TextPrimary) },
+                        onClick = { selectedPreset = null; presetExpanded = false }
+                    )
+                    presets.forEach { preset ->
+                        DropdownMenuItem(
+                            text    = {
+                                Column {
+                                    Text(preset.name, color = TextPrimary, fontSize = 14.sp)
+                                    if (preset.description.isNotBlank())
+                                        Text(preset.description, color = TextSecondary, fontSize = 11.sp)
+                                }
+                            },
+                            onClick = { selectedPreset = preset; presetExpanded = false }
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
 
         Button(
-            onClick   = { if (canSave) onSave(selectedSite, username.trim()) },
+            onClick   = { if (canSave) onSave(selectedSite, username.trim(), autoRecord, selectedPreset?.id) },
             enabled   = canSave,
             modifier  = Modifier.fillMaxWidth().height(52.dp),
             shape     = RoundedCornerShape(14.dp),
@@ -298,6 +379,7 @@ private fun outlinedFieldColors() = OutlinedTextFieldDefaults.colors(
 private fun TopBar(
     streamerCount: Int,
     liveCount: Int,
+    recordingCount: Int,
     isMonitoring: Boolean,
     onMonitorClick: () -> Unit
 ) {
@@ -339,21 +421,31 @@ private fun TopBar(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-        Divider(color = DividerColor, thickness = 1.dp)
+        HorizontalDivider(color = DividerColor, thickness = 1.dp)
         Spacer(modifier = Modifier.height(14.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
-            StatChip("TRACKED", streamerCount.toString())
-            StatChip("LIVE NOW", liveCount.toString(), highlight = liveCount > 0)
+            StatChip("TRACKED",   streamerCount.toString())
+            StatChip("LIVE NOW",  liveCount.toString(),      highlight = liveCount > 0)
+            if (recordingCount > 0)
+                StatChip("REC", recordingCount.toString(), highlight = true, highlightColor = RecordRed)
         }
     }
 }
 
 @Composable
-private fun StatChip(label: String, value: String, highlight: Boolean = false) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+private fun StatChip(
+    label: String,
+    value: String,
+    highlight: Boolean = false,
+    highlightColor: Color = AccentCyan
+) {
+    Row(
+        verticalAlignment     = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold,
-            color = if (highlight) AccentCyan else TextPrimary)
+            color = if (highlight) highlightColor else TextPrimary)
         Text(label, fontSize = 10.sp, color = TextSecondary, letterSpacing = 1.sp)
     }
 }
@@ -361,20 +453,34 @@ private fun StatChip(label: String, value: String, highlight: Boolean = false) {
 // ── Streamer card ─────────────────────────────────────────────────────────────
 
 @Composable
-private fun StreamerCard(streamer: Streamer, onDelete: () -> Unit) {
-    val color = statusColor(streamer.status)
-    val label = statusLabel(streamer.status)
+private fun StreamerCard(
+    streamer: Streamer,
+    isRecording: Boolean,
+    onDelete: () -> Unit,
+    onRecord: () -> Unit
+) {
+    val statusColor = statusColor(streamer.status)
+    val statusLabel = statusLabel(streamer.status)
 
     Card(
-        modifier = Modifier.fillMaxWidth().shadow(2.dp, RoundedCornerShape(14.dp)),
-        shape    = RoundedCornerShape(14.dp),
-        colors   = CardDefaults.cardColors(containerColor = CardDark)
+        modifier = Modifier
+            .fillMaxWidth()
+            .shadow(2.dp, RoundedCornerShape(14.dp))
+            // Red border while recording
+            .then(
+                if (isRecording)
+                    Modifier.border(1.5.dp, RecordRed.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
+                else Modifier
+            ),
+        shape  = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = CardDark)
     ) {
         Row(
             modifier              = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment     = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
+            // Avatar + info
             Row(
                 verticalAlignment     = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(14.dp),
@@ -386,35 +492,146 @@ private fun StreamerCard(streamer: Streamer, onDelete: () -> Unit) {
                         .clip(CircleShape)
                         .background(
                             Brush.radialGradient(
-                                listOf(color.copy(alpha = 0.35f), color.copy(alpha = 0.08f))
+                                listOf(statusColor.copy(alpha = 0.35f), statusColor.copy(alpha = 0.08f))
                             )
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(streamer.username.first().uppercaseChar().toString(),
-                        color = color, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                        streamer.username.first().uppercaseChar().toString(),
+                        color      = statusColor,
+                        fontWeight = FontWeight.Bold,
+                        fontSize   = 16.sp
+                    )
                 }
 
                 Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text(streamer.username, color = TextPrimary, fontWeight = FontWeight.SemiBold,
-                        fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Row(verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        PulseDot(color)
-                        Text(label, color = color, fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            streamer.username,
+                            color      = TextPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize   = 15.sp,
+                            maxLines   = 1,
+                            overflow   = TextOverflow.Ellipsis
+                        )
+                        // 🔴 Recording badge
+                        if (isRecording) {
+                            RecordingBadge()
+                        }
+                        // ⚡ Auto-record indicator
+                        if (streamer.autoRecord) {
+                            Text(
+                                "AUTO",
+                                fontSize      = 8.sp,
+                                fontWeight    = FontWeight.Bold,
+                                color         = AccentCyan,
+                                letterSpacing = 0.5.sp,
+                                modifier      = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(AccentCyan.copy(alpha = 0.12f))
+                                    .padding(horizontal = 5.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    Row(
+                        verticalAlignment     = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        PulseDot(statusColor)
+                        Text(
+                            statusLabel,
+                            color      = statusColor,
+                            fontSize   = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
+                        Text("·", color = TextSecondary, fontSize = 10.sp)
+                        Text(
+                            streamer.site.replaceFirstChar { it.uppercase() },
+                            color    = TextSecondary,
+                            fontSize = 10.sp
+                        )
                     }
                 }
             }
 
-            IconButton(
-                onClick  = onDelete,
-                modifier = Modifier.size(36.dp).clip(RoundedCornerShape(10.dp)).background(Color(0x22EF5350))
-            ) {
-                Icon(Icons.Default.Delete, "Remove ${streamer.username}",
-                    tint = StatusOffline, modifier = Modifier.size(17.dp))
+            // Action buttons
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                // Record / Stop button
+                IconButton(
+                    onClick  = onRecord,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isRecording) RecordRed.copy(alpha = 0.2f)
+                            else             Color(0x22FFFFFF)
+                        )
+                ) {
+                    Icon(
+                        if (isRecording) Icons.Default.Close else Icons.Default.PlayArrow,
+                        contentDescription = if (isRecording) "Stop recording" else "Record",
+                        tint     = if (isRecording) RecordRed else TextSecondary,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
+
+                // Delete
+                IconButton(
+                    onClick  = onDelete,
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Color(0x22EF5350))
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Remove ${streamer.username}",
+                        tint     = StatusOffline,
+                        modifier = Modifier.size(17.dp)
+                    )
+                }
             }
         }
+    }
+}
+
+// ── Recording badge (pulsing red dot + REC text) ──────────────────────────────
+
+@Composable
+private fun RecordingBadge() {
+    val transition = rememberInfiniteTransition(label = "rec")
+    val alpha by transition.animateFloat(
+        initialValue  = 1f,
+        targetValue   = 0.3f,
+        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse),
+        label         = "recAlpha"
+    )
+    Row(
+        modifier          = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(RecordRed.copy(alpha = 0.15f))
+            .padding(horizontal = 5.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(3.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(5.dp)
+                .clip(CircleShape)
+                .background(RecordRed.copy(alpha = alpha))
+        )
+        Text(
+            "REC",
+            fontSize      = 8.sp,
+            fontWeight    = FontWeight.Bold,
+            color         = RecordRed,
+            letterSpacing = 0.5.sp
+        )
     }
 }
 
@@ -424,7 +641,8 @@ private fun StreamerCard(streamer: Streamer, onDelete: () -> Unit) {
 private fun PulseDot(color: Color) {
     val transition = rememberInfiniteTransition(label = "pulse")
     val alpha by transition.animateFloat(
-        initialValue  = 1f, targetValue = 0.3f,
+        initialValue  = 1f,
+        targetValue   = 0.3f,
         animationSpec = infiniteRepeatable(tween(900, easing = EaseInOutSine), RepeatMode.Reverse),
         label         = "alpha"
     )

@@ -1,102 +1,197 @@
 package com.manav.geaper.data.repository
 
+import android.content.Context
+import android.util.Log
+import com.manav.geaper.data.db.FfmpegPresetDao
 import com.manav.geaper.data.db.StreamerDao
+import com.manav.geaper.data.model.FfmpegPreset
 import com.manav.geaper.data.model.Streamer
+import com.manav.geaper.data.prefs.AppPreferences
+import com.manav.geaper.data.prefs.safUriToPath
 import com.manav.geaper.network.CamsodaApi
 import com.manav.geaper.network.ChaturbateApi
+import com.manav.geaper.notification.NotificationHelper
+import com.manav.geaper.recorder.StreamRecorder
+import com.manav.geaper.service.RecordingService
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-
-
-import android.util.Log
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.forEach
+import kotlinx.coroutines.launch
 
 class StreamRepository(
+    private val context: Context,
     private val dao: StreamerDao,
+    private val presetDao: FfmpegPresetDao,
     private val cbApi: ChaturbateApi,
-    private val csApi: CamsodaApi
+    private val csApi: CamsodaApi,
+    private val prefs: AppPreferences
 ) {
 
-    val streamers = dao.getAll()
+    private val TAG = "GeaperMonitor"
 
-    suspend fun addStreamer(site: String, username: String) {
+    val streamers: Flow<List<Streamer>> = dao.getAll()
+    val presets:   Flow<List<FfmpegPreset>> = presetDao.getAll()
 
+    // ---------- recording state (in-memory) ----------
+    /** Set of "site-username" keys currently being recorded. */
+    private val _recording = mutableSetOf<String>()
+    fun isRecording(site: String, username: String) = "$site-$username" in _recording
+
+    // ---------- streamer CRUD ----------
+
+    suspend fun addStreamer(
+        site: String,
+        username: String,
+        autoRecord: Boolean = false,
+        ffmpegPresetId: Int? = null
+    ) {
         dao.insert(
             Streamer(
-                site = site,
-                username = username,
-                status = "offline",
-                flag = null
+                site          = site,
+                username      = username,
+                status        = "offline",
+                flag          = null,
+                autoRecord    = autoRecord,
+                ffmpegPresetId = ffmpegPresetId
             )
         )
     }
 
-    private val TAG = "GeaperMonitor"
+    suspend fun updateStreamerSettings(id: Int, autoRecord: Boolean, ffmpegPresetId: Int?) {
+        dao.updateSettings(id, autoRecord, ffmpegPresetId)
+    }
+
+    suspend fun removeStreamer(streamer: Streamer) {
+        stopRecording(streamer.site, streamer.username)
+        dao.delete(streamer)
+    }
+
+    // ---------- preset CRUD ----------
+
+    suspend fun addPreset(preset: FfmpegPreset)    = presetDao.insert(preset)
+    suspend fun deletePreset(preset: FfmpegPreset) = presetDao.delete(preset)
+    suspend fun updatePreset(preset: FfmpegPreset) = presetDao.update(preset)
+
+    // ---------- monitoring ----------
+
     suspend fun updateStatuses(streamers: List<Streamer>) {
         Log.d(TAG, "Monitoring cycle started. Streamers: ${streamers.size}")
 
+        // ── Chaturbate ──────────────────────────────────────────────────────
         val cbStatus = HashMap<String, String>()
-        Log.d(TAG, "Fetching Chaturbate rooms")
         val rooms = cbApi.getOnlineRooms()
-        Log.d(TAG, "Chaturbate rooms received: ${rooms.size}")
-        Log.d(TAG, "Monitoring cycle started. Streamers: ${streamers.size}")
-        rooms.forEach {
+        rooms.forEach { cbStatus[it.username] = it.current_show ?: "offline" }
 
-            val username = it.username
-            val show = it.current_show ?: "offline"
-
-            cbStatus[username] = show
+        streamers.filter { it.site == "chaturbate" }.forEach { streamer ->
+            val newStatus = cbStatus[streamer.username] ?: "offline"
+            handleStatusChange(streamer, newStatus)
         }
-        // Update chaturbate users
-        streamers
-            .filter { it.site == "chaturbate" }
-            .forEach {
 
-                val status =
-                    cbStatus[it.username] ?: "offline"
-                Log.d(TAG, "Chaturbate ${it.username} -> $status")
-                dao.updateStatus(it.site,it.username,status)
-            }
-        Log.d(TAG, "Updating Camsoda users")
-        // Update camsoda users
+        // ── Camsoda ─────────────────────────────────────────────────────────
         updateCamsoda(streamers)
+
         Log.d(TAG, "Monitoring cycle finished")
         debugPrintDb()
     }
 
-    suspend fun updateCamsoda(streamers: List<Streamer>) {
-        Log.d(TAG, "Starting Camsoda checks")
+    private suspend fun updateCamsoda(streamers: List<Streamer>) {
         coroutineScope {
-            streamers
-                .filter { it.site == "camsoda" }
-                .map { streamer ->
-                    async(Dispatchers.IO) {
-                        val status = csApi.getStatus(streamer.username)
-                        Log.d(TAG, "Camsoda ${streamer.username} -> $status")
-                        Log.d(TAG, "Updating DB ${streamer.username}: ${streamer.status} -> $status")
-                        dao.updateStatus(streamer.site, streamer.username, status)
-                    }
+            streamers.filter { it.site == "camsoda" }.map { streamer ->
+                async(Dispatchers.IO) {
+                    val newStatus = csApi.getStatus(streamer.username)
+                    handleStatusChange(streamer, newStatus)
                 }
-                .awaitAll()
+            }.awaitAll()
         }
-
-        Log.d(TAG, "Finished Camsoda checks")
     }
+
+    /**
+     * Persists the new status, fires a notification on interesting transitions,
+     * and triggers auto-record when the streamer goes live.
+     */
+    private suspend fun handleStatusChange(streamer: Streamer, newStatus: String) {
+        val oldStatus = streamer.status
+        if (oldStatus == newStatus) return
+
+        Log.d(TAG, "${streamer.site}/${streamer.username}: $oldStatus → $newStatus")
+        dao.updateStatus(streamer.site, streamer.username, newStatus)
+
+        // Notification
+        NotificationHelper.notifyStatusChange(
+            context  = context,
+            username = streamer.username,
+            site     = streamer.site,
+            oldStatus = oldStatus,
+            newStatus = newStatus
+        )
+
+        // Auto-record: start when going live, stop when going offline
+        val goingLive    = isLive(newStatus) && !isLive(oldStatus)
+        val goingOffline = !isLive(newStatus) && isLive(oldStatus)
+
+        if (goingLive && streamer.autoRecord) {
+            startRecording(streamer)
+        }
+        if (goingOffline) {
+            stopRecording(streamer.site, streamer.username)
+        }
+    }
+
+    // ---------- recording ----------
+
+    fun startRecording(streamer: Streamer) {
+        val key = "${streamer.site}-${streamer.username}"
+        if (key in _recording) return
+        _recording += key
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val rawPath      = prefs.savePath.first()
+            val savePath     = safUriToPath(context, rawPath)
+            val segmentMins  = prefs.segmentMinutes.first()
+            val ffmpegArgs   = streamer.ffmpegPresetId
+                ?.let { presetId -> presetDao.getAll().first().find { it.id == presetId }?.args }
+                ?: ""
+
+            Log.d(TAG, "Recording to: $savePath (raw: $rawPath)")
+
+            // Start foreground service to keep network alive when backgrounded
+            RecordingService.start(context, streamer.username)
+
+            try {
+                StreamRecorder.startRecording(
+                    context        = context,
+                    outputDir      = savePath,
+                    site           = streamer.site,
+                    username       = streamer.username,
+                    segmentMinutes = segmentMins,
+                    ffmpegArgs     = ffmpegArgs
+                )
+            } finally {
+                RecordingService.stop(context)
+                _recording -= key
+                Log.d(TAG, "Recording finished for $key")
+            }
+        }
+    }
+
+    fun stopRecording(site: String, username: String) {
+        val key = "$site-$username"
+        StreamRecorder.stopRecording(site, username)
+        _recording -= key
+    }
+
+    // ---------- helpers ----------
+
+    private fun isLive(status: String) =
+        status.lowercase() in listOf("public", "online")
 
     private suspend fun debugPrintDb() {
-        val rows = dao.getAll().first()
-        rows.forEach { streamer ->
-            Log.d(
-                TAG,
-                "DB -> id=${streamer.id} site=${streamer.site}, username=${streamer.username}, status=${streamer.status}"
-            )
+        dao.getAll().first().forEach {
+            Log.d(TAG, "DB -> id=${it.id} ${it.site}/${it.username} status=${it.status}")
         }
-    }
-
-    suspend fun removeStreamer(streamer: Streamer) {
-        dao.delete(streamer)
     }
 }

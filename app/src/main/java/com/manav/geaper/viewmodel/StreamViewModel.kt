@@ -2,15 +2,13 @@ package com.manav.geaper.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.manav.geaper.data.model.FfmpegPreset
 import com.manav.geaper.data.model.Streamer
 import com.manav.geaper.data.repository.StreamRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
@@ -18,25 +16,25 @@ class StreamViewModel(
     private val repo: StreamRepository,
 ) : ViewModel() {
 
-    val streamers = repo.streamers
+    val streamers: StateFlow<List<Streamer>> =
+        repo.streamers.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val presets: StateFlow<List<FfmpegPreset>> =
+        repo.presets.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    // ── Monitoring ────────────────────────────────────────────────────────────
 
     private var monitoringJob: Job? = null
 
     private val _isMonitoring = MutableStateFlow(false)
     val isMonitoring: StateFlow<Boolean> = _isMonitoring.asStateFlow()
 
-    fun addStreamer(site: String, username: String) {
-        viewModelScope.launch {
-            repo.addStreamer(site, username)
-        }
-    }
-
     fun startMonitoring() {
         if (monitoringJob?.isActive == true) return
+        _isMonitoring.value = true
         monitoringJob = viewModelScope.launch(Dispatchers.IO) {
-            _isMonitoring.value = true
             while (isActive) {
-                val list = repo.streamers.first()
+                val list = streamers.value
                 repo.updateStatuses(list)
                 delay(10_000)
             }
@@ -55,9 +53,52 @@ class StreamViewModel(
         if (_isMonitoring.value) stopMonitoring() else startMonitoring()
     }
 
-    fun removeStreamer(streamer: Streamer) {
+    // ── Streamers ─────────────────────────────────────────────────────────────
+
+    fun addStreamer(
+        site: String,
+        username: String,
+        autoRecord: Boolean = false,
+        ffmpegPresetId: Int? = null
+    ) {
         viewModelScope.launch {
-            repo.removeStreamer(streamer)
+            repo.addStreamer(site, username, autoRecord, ffmpegPresetId)
         }
+    }
+
+    fun removeStreamer(streamer: Streamer) {
+        viewModelScope.launch { repo.removeStreamer(streamer) }
+    }
+
+    fun updateStreamerSettings(id: Int, autoRecord: Boolean, ffmpegPresetId: Int?) {
+        viewModelScope.launch { repo.updateStreamerSettings(id, autoRecord, ffmpegPresetId) }
+    }
+
+    // ── Recording ─────────────────────────────────────────────────────────────
+
+    fun isRecording(streamer: Streamer) = repo.isRecording(streamer.site, streamer.username)
+
+    fun startRecording(streamer: Streamer) {
+        repo.startRecording(streamer)
+    }
+
+    fun stopRecording(streamer: Streamer) {
+        repo.stopRecording(streamer.site, streamer.username)
+    }
+
+    // ── FFmpeg Presets ────────────────────────────────────────────────────────
+
+    fun addPreset(name: String, args: String, description: String = "") {
+        viewModelScope.launch {
+            repo.addPreset(FfmpegPreset(name = name, args = args, description = description))
+        }
+    }
+
+    fun deletePreset(preset: FfmpegPreset) {
+        viewModelScope.launch { repo.deletePreset(preset) }
+    }
+
+    fun updatePreset(preset: FfmpegPreset) {
+        viewModelScope.launch { repo.updatePreset(preset) }
     }
 }

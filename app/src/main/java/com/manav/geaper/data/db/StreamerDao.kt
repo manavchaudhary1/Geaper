@@ -1,9 +1,6 @@
-package com.manav.geaper.data.db;
+package com.manav.geaper.data.db
 
-import androidx.room.Dao
-import androidx.room.Delete
-import androidx.room.Insert
-import androidx.room.Query
+import androidx.room.*
 import com.manav.geaper.data.model.Streamer
 import kotlinx.coroutines.flow.Flow
 
@@ -20,8 +17,15 @@ interface StreamerDao {
         UPDATE streamers
         SET status = :status
         WHERE username = :username AND site = :site
-        """)
+    """)
     suspend fun updateStatus(site: String, username: String, status: String)
+
+    @Query("""
+        UPDATE streamers
+        SET autoRecord = :autoRecord, ffmpegPresetId = :ffmpegPresetId
+        WHERE id = :id
+    """)
+    suspend fun updateSettings(id: Int, autoRecord: Boolean, ffmpegPresetId: Int?)
 
     @Delete
     suspend fun delete(streamer: Streamer)
