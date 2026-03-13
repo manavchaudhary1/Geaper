@@ -28,16 +28,14 @@ class StreamRepository(
     private val presetDao: FfmpegPresetDao,
     private val cbApi: ChaturbateApi,
     private val csApi: CamsodaApi,
-    private val prefs: AppPreferences
+    private val prefs: AppPreferences,
 ) {
-
     private val TAG = "GeaperMonitor"
 
-    val streamers: Flow<List<Streamer>> = dao.getAll()
+    val streamers: Flow<List<Streamer>>     = dao.getAll()
     val presets:   Flow<List<FfmpegPreset>> = presetDao.getAll()
 
-    // ---------- recording state (in-memory) ----------
-    /** Set of "site-username" keys currently being recorded. */
+    // ---------- recording state ----------
     private val _recording = mutableSetOf<String>()
     fun isRecording(site: String, username: String) = "$site-$username" in _recording
 
@@ -47,22 +45,29 @@ class StreamRepository(
         site: String,
         username: String,
         autoRecord: Boolean = false,
-        ffmpegPresetId: Int? = null
+        ffmpegPresetId: Int? = null,
+        formatSelector: String = "",
     ) {
         dao.insert(
             Streamer(
-                site          = site,
-                username      = username,
-                status        = "offline",
-                flag          = null,
-                autoRecord    = autoRecord,
-                ffmpegPresetId = ffmpegPresetId
+                site           = site,
+                username       = username,
+                status         = "offline",
+                flag           = null,
+                autoRecord     = autoRecord,
+                ffmpegPresetId = ffmpegPresetId,
+                formatSelector = formatSelector,
             )
         )
     }
 
-    suspend fun updateStreamerSettings(id: Int, autoRecord: Boolean, ffmpegPresetId: Int?) {
-        dao.updateSettings(id, autoRecord, ffmpegPresetId)
+    suspend fun updateStreamerSettings(
+        id: Int,
+        autoRecord: Boolean,
+        ffmpegPresetId: Int?,
+        formatSelector: String,
+    ) {
+        dao.updateSettings(id, autoRecord, ffmpegPresetId, formatSelector)
     }
 
     suspend fun removeStreamer(streamer: Streamer) {
@@ -79,19 +84,15 @@ class StreamRepository(
     // ---------- monitoring ----------
 
     suspend fun updateStatuses(streamers: List<Streamer>) {
-        Log.d(TAG, "Monitoring cycle started. Streamers: ${streamers.size}")
+        Log.d(TAG, "Monitoring cycle — ${streamers.size} streamers")
+        val wmToken = prefs.cbWmToken.first()
 
-        // ── Chaturbate ──────────────────────────────────────────────────────
         val cbStatus = HashMap<String, String>()
-        val rooms = cbApi.getOnlineRooms()
-        rooms.forEach { cbStatus[it.username] = it.current_show ?: "offline" }
+        cbApi.getOnlineRooms(wmToken).forEach { cbStatus[it.username] = it.current_show ?: "offline" }
 
         streamers.filter { it.site == "chaturbate" }.forEach { streamer ->
-            val newStatus = cbStatus[streamer.username] ?: "offline"
-            handleStatusChange(streamer, newStatus)
+            handleStatusChange(streamer, cbStatus[streamer.username] ?: "offline")
         }
-
-        // ── Camsoda ─────────────────────────────────────────────────────────
         updateCamsoda(streamers)
 
         Log.d(TAG, "Monitoring cycle finished")
@@ -102,43 +103,22 @@ class StreamRepository(
         coroutineScope {
             streamers.filter { it.site == "camsoda" }.map { streamer ->
                 async(Dispatchers.IO) {
-                    val newStatus = csApi.getStatus(streamer.username)
-                    handleStatusChange(streamer, newStatus)
+                    handleStatusChange(streamer, csApi.getStatus(streamer.username))
                 }
             }.awaitAll()
         }
     }
 
-    /**
-     * Persists the new status, fires a notification on interesting transitions,
-     * and triggers auto-record when the streamer goes live.
-     */
     private suspend fun handleStatusChange(streamer: Streamer, newStatus: String) {
         val oldStatus = streamer.status
         if (oldStatus == newStatus) return
 
         Log.d(TAG, "${streamer.site}/${streamer.username}: $oldStatus → $newStatus")
         dao.updateStatus(streamer.site, streamer.username, newStatus)
+        NotificationHelper.notifyStatusChange(context, streamer.username, streamer.site, oldStatus, newStatus)
 
-        // Notification
-        NotificationHelper.notifyStatusChange(
-            context  = context,
-            username = streamer.username,
-            site     = streamer.site,
-            oldStatus = oldStatus,
-            newStatus = newStatus
-        )
-
-        // Auto-record: start when going live, stop when going offline
-        val goingLive    = isLive(newStatus) && !isLive(oldStatus)
-        val goingOffline = !isLive(newStatus) && isLive(oldStatus)
-
-        if (goingLive && streamer.autoRecord) {
-            startRecording(streamer)
-        }
-        if (goingOffline) {
-            stopRecording(streamer.site, streamer.username)
-        }
+        if (isLive(newStatus) && !isLive(oldStatus) && streamer.autoRecord) startRecording(streamer)
+        if (!isLive(newStatus) && isLive(oldStatus))                         stopRecording(streamer.site, streamer.username)
     }
 
     // ---------- recording ----------
@@ -149,18 +129,15 @@ class StreamRepository(
         _recording += key
 
         CoroutineScope(Dispatchers.IO).launch {
-            val rawPath      = prefs.savePath.first()
-            val savePath     = safUriToPath(context, rawPath)
-            val segmentMins  = prefs.segmentMinutes.first()
-            val ffmpegArgs   = streamer.ffmpegPresetId
-                ?.let { presetId -> presetDao.getAll().first().find { it.id == presetId }?.args }
+            val savePath    = safUriToPath(context, prefs.savePath.first())
+            val segmentMins = prefs.segmentMinutes.first()
+            // Format comes from the streamer; extra flags come from the preset
+            val extraArgs   = streamer.ffmpegPresetId
+                ?.let { id -> presetDao.getAll().first().find { it.id == id }?.extraArgs }
                 ?: ""
 
-            Log.d(TAG, "Recording to: $savePath (raw: $rawPath)")
-
-            // Start foreground service to keep network alive when backgrounded
+            Log.d(TAG, "Recording $key | format='${streamer.formatSelector}' extra='$extraArgs'")
             RecordingService.start(context, streamer.username)
-
             try {
                 StreamRecorder.startRecording(
                     context        = context,
@@ -168,7 +145,8 @@ class StreamRepository(
                     site           = streamer.site,
                     username       = streamer.username,
                     segmentMinutes = segmentMins,
-                    ffmpegArgs     = ffmpegArgs
+                    formatSelector = streamer.formatSelector,
+                    extraArgs      = extraArgs,
                 )
             } finally {
                 RecordingService.stop(context)
@@ -179,19 +157,17 @@ class StreamRepository(
     }
 
     fun stopRecording(site: String, username: String) {
-        val key = "$site-$username"
         StreamRecorder.stopRecording(site, username)
-        _recording -= key
+        _recording -= "$site-$username"
     }
 
     // ---------- helpers ----------
 
-    private fun isLive(status: String) =
-        status.lowercase() in listOf("public", "online")
+    private fun isLive(status: String) = status.lowercase() in listOf("public", "online")
 
     private suspend fun debugPrintDb() {
         dao.getAll().first().forEach {
-            Log.d(TAG, "DB -> id=${it.id} ${it.site}/${it.username} status=${it.status}")
+            Log.d(TAG, "DB -> ${it.site}/${it.username} status=${it.status} format='${it.formatSelector}'")
         }
     }
 }

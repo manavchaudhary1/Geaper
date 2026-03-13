@@ -13,6 +13,12 @@ data class Streamer(
     val flag: String?,
     /** If true, recording starts automatically when streamer goes live. */
     val autoRecord: Boolean = false,
-    /** FK reference to FfmpegPreset.id; null = no preset / plain recording. */
-    val ffmpegPresetId: Int? = null
+    /** FK reference to FfmpegPreset.id for extra yt-dlp flags; null = none. */
+    val ffmpegPresetId: Int? = null,
+    /**
+     * yt-dlp -f format selector stored per-streamer.
+     * Empty string → use app default (bestvideo+bestaudio/best).
+     * Examples: "bestvideo[height<=720]+bestaudio/best[height<=720]"
+     */
+    val formatSelector: String = "",
 )
