@@ -11,117 +11,113 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.manav.geaper.data.model.FfmpegPreset
 import com.manav.geaper.viewmodel.StreamViewModel
 
-// ── Palette (mirrors HomeScreen/SettingsScreen) ───────────────────────────────
-private val BackgroundDark = Color(0xFF0D0F14)
-private val SurfaceDark    = Color(0xFF161920)
-private val CardDark       = Color(0xFF1E2229)
-private val AccentCyan     = Color(0xFF00E5C8)
-private val TextPrimary    = Color(0xFFECEFF4)
-private val TextSecondary  = Color(0xFF7A8499)
-private val DividerColor   = Color(0xFF252A33)
-private val InputBg        = Color(0xFF1A1E26)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomScriptScreen(viewModel: StreamViewModel) {
 
-    val presets by viewModel.presets.collectAsState()
-    var showDialog  by remember { mutableStateOf(false) }
-    var editTarget  by remember { mutableStateOf<FfmpegPreset?>(null) }
+    val presets    by viewModel.presets.collectAsState()
+    var showDialog by remember { mutableStateOf(false) }
+    var editTarget by remember { mutableStateOf<FfmpegPreset?>(null) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(BackgroundDark)
+            .background(MaterialTheme.colorScheme.background),
     ) {
-        // Header
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .background(SurfaceDark)
-                .padding(horizontal = 20.dp, vertical = 18.dp)
-        ) {
-            Text("FFMPEG PRESETS", fontSize = 20.sp, fontWeight = FontWeight.Black,
-                color = TextPrimary, letterSpacing = 4.sp)
-            Text("Custom yt-dlp post-processor arguments", fontSize = 12.sp, color = TextSecondary)
+        // ── Header ─────────────────────────────────────────────────────────
+        Surface(color = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 2.dp) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 18.dp),
+            ) {
+                Text(
+                    "FLAG PRESETS",
+                    fontSize = 20.sp, fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface, letterSpacing = 4.sp,
+                )
+                Text(
+                    "Named sets of extra yt-dlp flags — applied per streamer",
+                    fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
 
         if (presets.isEmpty()) {
-            Box(
-                modifier         = Modifier.weight(1f).fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Text("🎬", fontSize = 36.sp)
-                    Text("No presets yet", color = TextPrimary, fontWeight = FontWeight.SemiBold)
-                    Text("Tap + to create a custom FFmpeg preset", color = TextSecondary, fontSize = 13.sp)
+                    Text("🚩", fontSize = 36.sp)
+                    Text("No presets yet",
+                        color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.SemiBold)
+                    Text("Tap + to create an extra-flags preset",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                 }
             }
         } else {
             LazyColumn(
-                modifier       = Modifier.weight(1f),
+                modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    Text(
-                        "These presets are passed as --postprocessor-args ffmpeg:<args> to yt-dlp.",
-                        fontSize = 12.sp,
-                        color    = TextSecondary,
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
+                    Surface(
+                        shape    = RoundedCornerShape(10.dp),
+                        color    = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(
+                            "These flags are appended verbatim after the standard yt-dlp options. " +
+                                    "Assign a preset to a streamer when adding or editing it.",
+                            fontSize = 12.sp,
+                            color    = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
                 }
                 items(presets, key = { it.id }) { preset ->
                     PresetCard(
                         preset   = preset,
                         onEdit   = { editTarget = preset; showDialog = true },
-                        onDelete = { viewModel.deletePreset(preset) }
+                        onDelete = { viewModel.deletePreset(preset) },
                     )
                 }
-                item { Spacer(modifier = Modifier.height(80.dp)) }
+                item { Spacer(Modifier.height(80.dp)) }
             }
         }
 
-        // FAB
         Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.BottomEnd) {
             FloatingActionButton(
                 onClick        = { editTarget = null; showDialog = true },
                 modifier       = Modifier.padding(20.dp),
-                containerColor = AccentCyan,
-                contentColor   = BackgroundDark,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor   = MaterialTheme.colorScheme.onPrimary,
                 shape          = RoundedCornerShape(16.dp),
-                elevation      = FloatingActionButtonDefaults.elevation(6.dp)
-            ) {
-                Icon(Icons.Default.Add, "New preset")
-            }
+            ) { Icon(Icons.Default.Add, "New preset") }
         }
     }
 
-    // ── Add / Edit dialog ──────────────────────────────────────────────────
     if (showDialog) {
         PresetDialog(
-            initial  = editTarget,
-            onSave   = { name, args, desc ->
-                if (editTarget == null) {
-                    viewModel.addPreset(name, args, desc)
-                } else {
-                    viewModel.updatePreset(editTarget!!.copy(name = name, args = args, description = desc))
-                }
+            initial   = editTarget,
+            onSave    = { name, extraArgs ->
+                if (editTarget == null)
+                    viewModel.addPreset(name, extraArgs)
+                else
+                    viewModel.updatePreset(editTarget!!.copy(name = name, extraArgs = extraArgs))
                 showDialog = false
                 editTarget = null
             },
-            onDismiss = { showDialog = false; editTarget = null }
+            onDismiss = { showDialog = false; editTarget = null },
         )
     }
 }
@@ -132,48 +128,59 @@ fun CustomScriptScreen(viewModel: StreamViewModel) {
 private fun PresetCard(
     preset: FfmpegPreset,
     onEdit: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
 ) {
     Surface(
-        shape  = RoundedCornerShape(14.dp),
-        color  = CardDark,
+        shape          = RoundedCornerShape(14.dp),
+        color          = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 2.dp,
-        modifier = Modifier.fillMaxWidth()
+        modifier       = Modifier.fillMaxWidth(),
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+
             Row(
-                modifier              = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment     = Alignment.Top
+                verticalAlignment     = Alignment.CenterVertically,
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(preset.name, color = TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                    if (preset.description.isNotBlank())
-                        Text(preset.description, color = TextSecondary, fontSize = 12.sp)
-                }
+                Text(
+                    preset.name,
+                    color      = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize   = 15.sp,
+                )
                 Row {
                     IconButton(onClick = onEdit, modifier = Modifier.size(34.dp)) {
-                        Icon(Icons.Default.Edit, "Edit", tint = AccentCyan, modifier = Modifier.size(17.dp))
+                        Icon(Icons.Default.Edit, "Edit",
+                            tint     = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(17.dp))
                     }
                     IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
-                        Icon(Icons.Default.Delete, "Delete", tint = Color(0xFFEF5350), modifier = Modifier.size(17.dp))
+                        Icon(Icons.Default.Delete, "Delete",
+                            tint     = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(17.dp))
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(8.dp))
-            // Args block
-            Surface(
-                shape  = RoundedCornerShape(8.dp),
-                color  = Color(0xFF0D0F14),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text     = preset.args,
-                    color    = AccentCyan,
-                    fontSize = 12.sp,
-                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    modifier = Modifier.padding(10.dp)
-                )
+
+            // Extra flags value
+            if (preset.extraArgs.isNotBlank()) {
+                Surface(
+                    shape    = RoundedCornerShape(8.dp),
+                    color    = MaterialTheme.colorScheme.surfaceContainerLow,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        preset.extraArgs,
+                        color      = MaterialTheme.colorScheme.primary,
+                        fontSize   = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier   = Modifier.padding(10.dp),
+                    )
+                }
+            } else {
+                Text("No flags set", fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -185,92 +192,72 @@ private fun PresetCard(
 @Composable
 private fun PresetDialog(
     initial: FfmpegPreset?,
-    onSave: (String, String, String) -> Unit,
-    onDismiss: () -> Unit
+    onSave: (name: String, extraArgs: String) -> Unit,
+    onDismiss: () -> Unit,
 ) {
-    var name by remember { mutableStateOf(initial?.name ?: "") }
-    var args by remember { mutableStateOf(initial?.args ?: "") }
-    var desc by remember { mutableStateOf(initial?.description ?: "") }
-
-    val textFieldColors = OutlinedTextFieldDefaults.colors(
-        focusedBorderColor      = AccentCyan,
-        unfocusedBorderColor    = DividerColor,
-        focusedTextColor        = TextPrimary,
-        unfocusedTextColor      = TextPrimary,
-        cursorColor             = AccentCyan,
-        focusedContainerColor   = InputBg,
-        unfocusedContainerColor = InputBg
-    )
+    var name      by remember { mutableStateOf(initial?.name      ?: "") }
+    var extraArgs by remember { mutableStateOf(initial?.extraArgs ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor   = Color(0xFF161920),
         title = {
-            Text(
-                if (initial == null) "New FFmpeg Preset" else "Edit Preset",
-                color = TextPrimary,
-                fontWeight = FontWeight.Bold
-            )
+            Text(if (initial == null) "New Flag Preset" else "Edit Preset",
+                fontWeight = FontWeight.Bold)
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                // Help text
-                Surface(shape = RoundedCornerShape(8.dp), color = AccentCyan.copy(alpha = 0.08f)) {
-                    Text(
-                        "Args are appended to: --postprocessor-args ffmpeg:<your args>",
-                        fontSize = 11.sp,
-                        color    = AccentCyan,
-                        modifier = Modifier.padding(10.dp)
-                    )
-                }
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+
                 OutlinedTextField(
                     value         = name,
                     onValueChange = { name = it },
                     label         = { Text("Preset Name") },
                     singleLine    = true,
                     shape         = RoundedCornerShape(10.dp),
-                    colors        = textFieldColors,
-                    modifier      = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value         = args,
-                    onValueChange = { args = it },
-                    label         = { Text("FFmpeg Arguments") },
-                    placeholder   = { Text("-vf scale=-2:720 -c:v libx264 -crf 23", color = TextSecondary, fontSize = 12.sp) },
-                    minLines      = 3,
-                    shape         = RoundedCornerShape(10.dp),
-                    colors        = textFieldColors,
                     modifier      = Modifier.fillMaxWidth(),
-                    textStyle     = LocalTextStyle.current.copy(
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                        fontSize   = 13.sp
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "EXTRA YT-DLP FLAGS",
+                        fontSize      = 10.sp,
+                        fontWeight    = FontWeight.Bold,
+                        color         = MaterialTheme.colorScheme.onSurfaceVariant,
+                        letterSpacing = 1.sp,
                     )
-                )
-                OutlinedTextField(
-                    value         = desc,
-                    onValueChange = { desc = it },
-                    label         = { Text("Description (optional)") },
-                    singleLine    = true,
-                    shape         = RoundedCornerShape(10.dp),
-                    colors        = textFieldColors,
-                    modifier      = Modifier.fillMaxWidth()
-                )
+                    Text(
+                        "Appended verbatim after all standard yt-dlp options.",
+                        fontSize = 11.sp,
+                        color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedTextField(
+                        value         = extraArgs,
+                        onValueChange = { extraArgs = it },
+                        label         = { Text("Flags") },
+                        placeholder   = {
+                            Text(
+                                "--concurrent-fragments 4 --throttled-rate 100K",
+                                fontSize = 11.sp,
+                                color    = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        },
+                        minLines  = 3,
+                        shape     = RoundedCornerShape(10.dp),
+                        modifier  = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(
+                            fontFamily = FontFamily.Monospace,
+                            fontSize   = 12.sp,
+                        ),
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick   = { if (name.isNotBlank() && args.isNotBlank()) onSave(name.trim(), args.trim(), desc.trim()) },
-                enabled   = name.isNotBlank() && args.isNotBlank(),
-                shape     = RoundedCornerShape(10.dp),
-                colors    = ButtonDefaults.buttonColors(containerColor = AccentCyan)
-            ) {
-                Text("Save", color = BackgroundDark, fontWeight = FontWeight.Bold)
-            }
+                onClick  = { if (name.isNotBlank()) onSave(name.trim(), extraArgs.trim()) },
+                enabled  = name.isNotBlank(),
+                shape    = RoundedCornerShape(10.dp),
+            ) { Text("Save", fontWeight = FontWeight.Bold) }
         },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel", color = TextSecondary)
-            }
-        }
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
 }

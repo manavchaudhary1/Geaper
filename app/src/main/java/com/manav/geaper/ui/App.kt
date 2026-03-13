@@ -13,7 +13,6 @@ import com.manav.geaper.data.prefs.AppPreferences
 import com.manav.geaper.data.repository.StreamRepository
 import com.manav.geaper.network.CamsodaApi
 import com.manav.geaper.network.ChaturbateApi
-import com.manav.geaper.recorder.StreamRecorder
 import com.manav.geaper.ui.screens.*
 import com.manav.geaper.ui.theme.GeaperTheme
 import com.manav.geaper.viewmodel.*
@@ -27,18 +26,18 @@ fun App() {
 
     val db = remember {
         Room.databaseBuilder(context, AppDatabase::class.java, "streamers.db")
-            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .fallbackToDestructiveMigration()
             .build()
     }
 
     val repository = remember {
         StreamRepository(
-            context    = context,
-            dao        = db.streamerDao(),
-            presetDao  = db.ffmpegPresetDao(),
-            cbApi      = ChaturbateApi(),
-            csApi      = CamsodaApi(),
-            prefs      = prefs
+            context   = context,
+            dao       = db.streamerDao(),
+            presetDao = db.ffmpegPresetDao(),
+            cbApi     = ChaturbateApi(),
+            csApi     = CamsodaApi(),
+            prefs     = prefs,
         )
     }
 
@@ -49,7 +48,6 @@ fun App() {
         factory = SettingsViewModelFactory(prefs)
     )
 
-    // ── Reactive theme prefs ──────────────────────────────────────────────
     val themeMode    by settingsViewModel.themeMode.collectAsState()
     val dynamicColor by settingsViewModel.dynamicColor.collectAsState()
 
@@ -66,19 +64,13 @@ fun App() {
                 startDestination = "Home",
                 modifier         = Modifier.padding(padding)
             ) {
-
                 composable("Home") {
                     val streamers by streamViewModel.streamers.collectAsState()
-                    HomeScreen(
-                        streamers = streamers,
-                        viewModel = streamViewModel
-                    )
+                    HomeScreen(streamers = streamers, viewModel = streamViewModel)
                 }
-
                 composable("Custom Script") {
                     CustomScriptScreen(viewModel = streamViewModel)
                 }
-
                 composable("Settings") {
                     SettingsScreen(viewModel = settingsViewModel)
                 }
