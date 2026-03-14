@@ -8,86 +8,56 @@ import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddScreen(
-    onSave: (String, String) -> Unit
-) {
+fun AddScreen(onSave: (String, String) -> Unit) {
 
-    var username by remember { mutableStateOf("") }
+  var username by remember { mutableStateOf("") }
 
-    val sites = listOf(
-        "chaturbate",
-        "camsoda"
+  val sites = listOf("chaturbate", "camsoda")
+
+  var selectedSite by remember { mutableStateOf(sites[0]) }
+  var expanded by remember { mutableStateOf(false) }
+
+  Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Text(text = "Add Streamer", style = MaterialTheme.typography.titleLarge)
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
+      TextField(
+        value = selectedSite,
+        onValueChange = {},
+        readOnly = true,
+        label = { Text("Site") },
+        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+        modifier = Modifier.menuAnchor()
+      )
+
+      ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        sites.forEach { site ->
+          DropdownMenuItem(
+            text = { Text(site) },
+            onClick = {
+              selectedSite = site
+              expanded = false
+            }
+          )
+        }
+      }
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+
+    TextField(
+      value = username,
+      onValueChange = { username = it },
+      label = { Text("Streamer Username") },
+      modifier = Modifier.fillMaxWidth()
     )
 
-    var selectedSite by remember { mutableStateOf(sites[0]) }
-    var expanded by remember { mutableStateOf(false) }
+    Spacer(modifier = Modifier.height(24.dp))
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-
-        Text(
-            text = "Add Streamer",
-            style = MaterialTheme.typography.titleLarge
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        ExposedDropdownMenuBox(
-            expanded = expanded,
-            onExpandedChange = { expanded = !expanded }
-        ) {
-
-            TextField(
-                value = selectedSite,
-                onValueChange = {},
-                readOnly = true,
-                label = { Text("Site") },
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded)
-                },
-                modifier = Modifier.menuAnchor()
-            )
-
-            ExposedDropdownMenu(
-                expanded = expanded,
-                onDismissRequest = { expanded = false }
-            ) {
-
-                sites.forEach { site ->
-
-                    DropdownMenuItem(
-                        text = { Text(site) },
-                        onClick = {
-                            selectedSite = site
-                            expanded = false
-                        }
-                    )
-                }
-            }
-        }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        TextField(
-            value = username,
-            onValueChange = { username = it },
-            label = { Text("Streamer Username") },
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(24.dp))
-
-        Button(
-            onClick = {
-                onSave(selectedSite, username)
-            },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-
-            Text("Save")
-        }
+    Button(onClick = { onSave(selectedSite, username) }, modifier = Modifier.fillMaxWidth()) {
+      Text("Save")
     }
+  }
 }

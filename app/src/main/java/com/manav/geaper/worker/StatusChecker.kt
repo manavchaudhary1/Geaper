@@ -4,20 +4,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-class StatusChecker(
-    val task: suspend () -> Unit
-) {
+class StatusChecker(val task: suspend () -> Unit) {
 
-    fun start() {
+  fun start() {
 
-        CoroutineScope(Dispatchers.IO).launch {
+    CoroutineScope(Dispatchers.IO).launch {
+      while (true) {
 
-            while (true) {
-
-                task()
-
-            }
-
-        }
+        task()
+      }
     }
+  }
 }

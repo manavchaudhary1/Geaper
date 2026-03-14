@@ -15,30 +15,31 @@ import com.manav.geaper.util.StoragePermission
 
 class MainActivity : ComponentActivity() {
 
-    // Launcher for POST_NOTIFICATIONS permission (Android 13+)
-    private val notifPermLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */ }
+  // Launcher for POST_NOTIFICATIONS permission (Android 13+)
+  private val notifPermLauncher =
+    registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* no-op */}
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        NotificationHelper.createChannel(this)
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    NotificationHelper.createChannel(this)
 
-        // Request POST_NOTIFICATIONS on Android 13+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-                != PackageManager.PERMISSION_GRANTED
-            ) {
-                notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
-
-        // Request MANAGE_EXTERNAL_STORAGE on Android 11+ so we can write
-        // recordings to arbitrary paths the user picks in Settings.
-        if (!StoragePermission.isGranted()) {
-            StoragePermission.openSettings(this)
-        }
-
-        enableEdgeToEdge()
-        setContent { App() }
+    // Request POST_NOTIFICATIONS on Android 13+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      if (
+        ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+          PackageManager.PERMISSION_GRANTED
+      ) {
+        notifPermLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+      }
     }
+
+    // Request MANAGE_EXTERNAL_STORAGE on Android 11+ so we can write
+    // recordings to arbitrary paths the user picks in Settings.
+    if (!StoragePermission.isGranted()) {
+      StoragePermission.openSettings(this)
+    }
+
+    enableEdgeToEdge()
+    setContent { App() }
+  }
 }

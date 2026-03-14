@@ -12,32 +12,30 @@ import com.manav.geaper.R
 @Composable
 fun BottomBar(navController: NavHostController) {
 
-    val currentRoute =
-        navController.currentBackStackEntryAsState().value?.destination?.route
+  val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
 
-    NavigationBar {
+  NavigationBar {
+    NavigationBarItem(
+      selected = currentRoute == "Home",
+      onClick = { navController.navigate("Home") },
+      icon = { Icon(Icons.Default.Home, "Home") }
+    )
 
-        NavigationBarItem(
-            selected = currentRoute == "Home",
-            onClick = { navController.navigate("Home") },
-            icon = { Icon(Icons.Default.Home, "Home") }
+    NavigationBarItem(
+      selected = currentRoute == "Custom Script",
+      onClick = { navController.navigate("Custom Script") },
+      icon = {
+        Icon(
+          painter = painterResource(R.drawable.article_24px),
+          contentDescription = "Custom Script"
         )
+      }
+    )
 
-        NavigationBarItem(
-            selected = currentRoute == "Custom Script",
-            onClick = { navController.navigate("Custom Script") },
-            icon = {
-                Icon(
-                    painter = painterResource(R.drawable.article_24px),
-                    contentDescription = "Custom Script"
-                )
-            }
-        )
-
-        NavigationBarItem(
-            selected = currentRoute == "Settings",
-            onClick = { navController.navigate("Settings") },
-            icon = { Icon(Icons.Default.Settings, "Settings") }
-        )
-    }
+    NavigationBarItem(
+      selected = currentRoute == "Settings",
+      onClick = { navController.navigate("Settings") },
+      icon = { Icon(Icons.Default.Settings, "Settings") }
+    )
+  }
 }

@@ -20,61 +20,49 @@ import com.manav.geaper.viewmodel.*
 @Composable
 fun App() {
 
-    val context = LocalContext.current
+  val context = LocalContext.current
 
-    val prefs = remember { AppPreferences(context) }
+  val prefs = remember { AppPreferences(context) }
 
-    val db = remember {
-        Room.databaseBuilder(context, AppDatabase::class.java, "streamers.db")
-            .fallbackToDestructiveMigration()
-            .build()
-    }
+  val db = remember {
+    Room.databaseBuilder(context, AppDatabase::class.java, "streamers.db")
+      .fallbackToDestructiveMigration()
+      .build()
+  }
 
-    val repository = remember {
-        StreamRepository(
-            context   = context,
-            dao       = db.streamerDao(),
-            presetDao = db.ffmpegPresetDao(),
-            cbApi     = ChaturbateApi(),
-            csApi     = CamsodaApi(),
-            prefs     = prefs,
-        )
-    }
-
-    val streamViewModel: StreamViewModel = viewModel(
-        factory = StreamViewModelFactory(repository)
+  val repository = remember {
+    StreamRepository(
+      context = context,
+      dao = db.streamerDao(),
+      presetDao = db.ffmpegPresetDao(),
+      cbApi = ChaturbateApi(),
+      csApi = CamsodaApi(),
+      prefs = prefs,
     )
-    val settingsViewModel: SettingsViewModel = viewModel(
-        factory = SettingsViewModelFactory(prefs)
-    )
+  }
 
-    val themeMode    by settingsViewModel.themeMode.collectAsState()
-    val dynamicColor by settingsViewModel.dynamicColor.collectAsState()
+  val streamViewModel: StreamViewModel = viewModel(factory = StreamViewModelFactory(repository))
+  val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModelFactory(prefs))
 
-    GeaperTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
+  val themeMode by settingsViewModel.themeMode.collectAsState()
+  val dynamicColor by settingsViewModel.dynamicColor.collectAsState()
 
-        val navController = rememberNavController()
+  GeaperTheme(themeMode = themeMode, dynamicColor = dynamicColor) {
+    val navController = rememberNavController()
 
-        Scaffold(
-            bottomBar = { BottomBar(navController) }
-        ) { padding ->
-
-            NavHost(
-                navController    = navController,
-                startDestination = "Home",
-                modifier         = Modifier.padding(padding)
-            ) {
-                composable("Home") {
-                    val streamers by streamViewModel.streamers.collectAsState()
-                    HomeScreen(streamers = streamers, viewModel = streamViewModel)
-                }
-                composable("Custom Script") {
-                    CustomScriptScreen(viewModel = streamViewModel)
-                }
-                composable("Settings") {
-                    SettingsScreen(viewModel = settingsViewModel)
-                }
-            }
+    Scaffold(bottomBar = { BottomBar(navController) }) { padding ->
+      NavHost(
+        navController = navController,
+        startDestination = "Home",
+        modifier = Modifier.padding(padding)
+      ) {
+        composable("Home") {
+          val streamers by streamViewModel.streamers.collectAsState()
+          HomeScreen(streamers = streamers, viewModel = streamViewModel)
         }
+        composable("Custom Script") { CustomScriptScreen(viewModel = streamViewModel) }
+        composable("Settings") { SettingsScreen(viewModel = settingsViewModel) }
+      }
     }
+  }
 }

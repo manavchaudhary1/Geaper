@@ -8,15 +8,6 @@ import kotlinx.serialization.json.Json
 
 object HttpClientProvider {
 
-    val client = HttpClient(CIO) {
-
-        install(ContentNegotiation) {
-
-            json(
-                Json {
-                    ignoreUnknownKeys = true
-                }
-            )
-        }
-    }
+  val client =
+    HttpClient(CIO) { install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) } }
 }

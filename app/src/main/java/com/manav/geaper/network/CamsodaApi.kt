@@ -6,13 +6,12 @@ import io.ktor.client.request.*
 
 class CamsodaApi {
 
-    suspend fun getStatus(username: String): String {
+  suspend fun getStatus(username: String): String {
 
-        val url = "https://www.camsoda.com/api/v1/chat/react/$username"
+    val url = "https://www.camsoda.com/api/v1/chat/react/$username"
 
-        val response: CamsodaResponse =
-            HttpClientProvider.client.get(url).body()
+    val response: CamsodaResponse = HttpClientProvider.client.get(url).body()
 
-        return response.stream?.status ?: "offline"
-    }
+    return response.stream?.status ?: "offline"
+  }
 }

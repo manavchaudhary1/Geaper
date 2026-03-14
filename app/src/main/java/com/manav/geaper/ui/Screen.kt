@@ -5,5 +5,5 @@ import androidx.compose.runtime.Composable
 
 @Composable
 fun Screen(name: String) {
-    Text("Screen: $name")
+  Text("Screen: $name")
 }

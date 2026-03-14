@@ -5,11 +5,9 @@ import androidx.room.RoomDatabase
 import com.manav.geaper.data.model.FfmpegPreset
 import com.manav.geaper.data.model.Streamer
 
-@Database(
-    entities = [Streamer::class, FfmpegPreset::class],
-    version  = 4
-)
+@Database(entities = [Streamer::class, FfmpegPreset::class], version = 4)
 abstract class AppDatabase : RoomDatabase() {
-    abstract fun streamerDao(): StreamerDao
-    abstract fun ffmpegPresetDao(): FfmpegPresetDao
+  abstract fun streamerDao(): StreamerDao
+
+  abstract fun ffmpegPresetDao(): FfmpegPresetDao
 }
