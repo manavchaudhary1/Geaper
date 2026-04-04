@@ -1,5 +1,6 @@
 package com.manav.geaper.viewmodel
 
+import android.app.Application
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -18,7 +19,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
-class StreamViewModel(private val repo: StreamRepository) : ViewModel() {
+class StreamViewModel(private val app: Application, private val repo: StreamRepository) :
+  ViewModel() {
 
   val streamers: StateFlow<List<Streamer>> =
     repo.streamers.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
@@ -125,9 +127,17 @@ class StreamViewModel(private val repo: StreamRepository) : ViewModel() {
 
   // ── Recording ─────────────────────────────────────────────────────────────
 
+  /** True if yt-dlp is running OR the recording is armed (waiting for streamer to go live). */
   fun isRecording(streamer: Streamer) = repo.isRecording(streamer.site, streamer.username)
 
-  /** Manual start — survives the streamer going offline */
+  /** True only if yt-dlp is actively downloading (not just armed). */
+  fun isActivelyRecording(streamer: Streamer) =
+    repo.isActivelyRecording(streamer.site, streamer.username)
+
+  /** True if armed — waiting for streamer to come online before launching yt-dlp. */
+  fun isArmed(streamer: Streamer) = repo.isArmed(streamer.site, streamer.username)
+
+  /** Manual start — arms if offline, launches yt-dlp immediately if live. */
   fun startRecording(streamer: Streamer) {
     repo.startRecording(streamer, manual = true)
   }
@@ -154,6 +164,21 @@ class StreamViewModel(private val repo: StreamRepository) : ViewModel() {
 
   private val _backupResult = MutableStateFlow<String?>(null)
   val backupResult: StateFlow<String?> = _backupResult.asStateFlow()
+
+  // ── WakeLock ──────────────────────────────────────────────────────────────
+
+  private val _isWakeLocked = MutableStateFlow(false)
+  val isWakeLocked: StateFlow<Boolean> = _isWakeLocked.asStateFlow()
+
+  fun toggleWakeLock() {
+    com.manav.geaper.util.WakeLockManager.toggle(app)
+    _isWakeLocked.value = com.manav.geaper.util.WakeLockManager.isHeld
+  }
+
+  override fun onCleared() {
+    super.onCleared()
+    com.manav.geaper.util.WakeLockManager.release()
+  }
 
   fun clearBackupResult() {
     _backupResult.value = null

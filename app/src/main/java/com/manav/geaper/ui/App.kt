@@ -13,8 +13,10 @@ import com.manav.geaper.data.prefs.AppPreferences
 import com.manav.geaper.data.repository.StreamRepository
 import com.manav.geaper.network.CamsodaApi
 import com.manav.geaper.network.ChaturbateApi
+import com.manav.geaper.ui.components.CrashReportDialog
 import com.manav.geaper.ui.screens.*
 import com.manav.geaper.ui.theme.GeaperTheme
+import com.manav.geaper.util.CrashHandler
 import com.manav.geaper.viewmodel.*
 
 @Composable
@@ -22,11 +24,15 @@ fun App() {
 
   val context = LocalContext.current
 
+  // Read crash dump once on composition
+  val crashDump = remember { CrashHandler.getLastCrashDump() }
+  var showCrashDialog by remember { mutableStateOf(crashDump != null) }
+
   val prefs = remember { AppPreferences(context) }
 
   val db = remember {
     Room.databaseBuilder(context, AppDatabase::class.java, "streamers.db")
-      .fallbackToDestructiveMigration()
+      .fallbackToDestructiveMigration(false)
       .build()
   }
 
@@ -41,7 +47,11 @@ fun App() {
     )
   }
 
-  val streamViewModel: StreamViewModel = viewModel(factory = StreamViewModelFactory(repository))
+  val streamViewModel: StreamViewModel =
+    viewModel(
+      factory =
+        StreamViewModelFactory(context.applicationContext as android.app.Application, repository)
+    )
   val settingsViewModel: SettingsViewModel = viewModel(factory = SettingsViewModelFactory(prefs))
 
   val themeMode by settingsViewModel.themeMode.collectAsState()
@@ -63,6 +73,15 @@ fun App() {
         composable("Custom Script") { CustomScriptScreen(viewModel = streamViewModel) }
         composable("Settings") { SettingsScreen(viewModel = settingsViewModel) }
       }
+    }
+    if (showCrashDialog && crashDump != null) {
+      CrashReportDialog(
+        crashDump = crashDump,
+        onDismiss = {
+          showCrashDialog = false
+          CrashHandler.clearCrashDump()
+        },
+      )
     }
   }
 }

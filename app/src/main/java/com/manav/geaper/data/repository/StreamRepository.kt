@@ -38,13 +38,23 @@ class StreamRepository(
   val presets: Flow<List<FfmpegPreset>> = presetDao.getAll()
 
   // ── Recording state ───────────────────────────────────────────────────────
-  // Tracks all active recordings
+
+  // Keys that are "armed" — user tapped record, waiting for streamer to go live
+  // yt-dlp has NOT been launched yet for these
+  private val _armed = mutableSetOf<String>()
+
+  // Keys where yt-dlp is actively running
   private val _recording = mutableSetOf<String>()
-  // Tracks recordings started MANUALLY (not auto-record flag)
-  // These will NOT auto-stop when streamer goes offline
+
+  // Subset of _recording that were started manually (survive offline transitions)
   private val _manualRecording = mutableSetOf<String>()
 
-  fun isRecording(site: String, username: String) = "$site-$username" in _recording
+  fun isRecording(site: String, username: String) =
+    "$site-$username" in _recording || "$site-$username" in _armed
+
+  fun isArmed(site: String, username: String) = "$site-$username" in _armed
+
+  fun isActivelyRecording(site: String, username: String) = "$site-$username" in _recording
 
   // ── Streamer CRUD ─────────────────────────────────────────────────────────
 
@@ -78,6 +88,8 @@ class StreamRepository(
   }
 
   suspend fun removeStreamer(streamer: Streamer) {
+    val key = "${streamer.site}-${streamer.username}"
+    _armed -= key
     stopRecording(streamer.site, streamer.username)
     dao.delete(streamer)
   }
@@ -139,31 +151,62 @@ class StreamRepository(
     val goingLive = isLive(newStatus) && !isLive(oldStatus)
     val goingOffline = !isLive(newStatus) && isLive(oldStatus)
 
-    // Auto-record: start when live
+    // 1. Auto-record flag: start yt-dlp when live
     if (goingLive && streamer.autoRecord && key !in _recording) {
-      startRecording(streamer, manual = false)
+      launchYtDlp(streamer, manual = false)
     }
 
-    // Auto-record going offline: only stop if this was NOT a manual recording
+    // 2. Armed manual recording: streamer just came online → launch yt-dlp now
+    if (goingLive && key in _armed) {
+      Log.d(TAG, "Armed recording triggered for $key — launching yt-dlp")
+      _armed -= key
+      launchYtDlp(streamer, manual = true)
+    }
+
+    // 3. Auto-record going offline: stop only if not manual
     if (goingOffline && key in _recording && key !in _manualRecording) {
-      Log.d(TAG, "Auto-stopping recording for $key (went offline, was auto-started)")
+      Log.d(TAG, "Auto-stopping $key (went offline, auto-started)")
       stopRecording(streamer.site, streamer.username)
     }
 
-    // If manually recording and streamer goes live again — already recording, no-op needed
-    // If manually recording and goes offline — keep going (intentional, user will stop manually)
-    if (goingLive && key in _manualRecording) {
-      Log.d(TAG, "Manual recording continuing through status change for $key")
+    // 4. Manual recording + streamer goes offline → keep yt-dlp running
+    //    yt-dlp will retry/reconnect on its own; user stops it manually
+    if (goingOffline && key in _manualRecording) {
+      Log.d(TAG, "Manual recording for $key continuing through offline transition")
     }
   }
 
   // ── Recording ─────────────────────────────────────────────────────────────
 
   /**
-   * @param manual true = started by user tap (survives offline transitions) false = started by
-   *   autoRecord flag (stops when streamer goes offline)
+   * Called when user taps the record button.
+   *
+   * If streamer is LIVE → launches yt-dlp immediately. If streamer is OFFLINE → arms it; yt-dlp
+   * will be launched the moment monitoring detects the streamer goes live. The card shows REC badge
+   * immediately so the user knows it's waiting.
    */
   fun startRecording(streamer: Streamer, manual: Boolean = true) {
+    val key = "${streamer.site}-${streamer.username}"
+    if (key in _recording || key in _armed) return
+
+    if (isLive(streamer.status)) {
+      // Online now → fire yt-dlp immediately
+      launchYtDlp(streamer, manual)
+    } else {
+      // Offline → arm and wait for monitoring to trigger
+      Log.d(TAG, "Arming recording for $key (currently offline, waiting for live)")
+      _armed += key
+      if (manual) _manualRecording += key
+      // Start foreground service so Android doesn't kill us while waiting
+      RecordingService.startArmed(context, streamer.username)
+    }
+  }
+
+  /**
+   * Actually launches yt-dlp for a streamer. Called either immediately (if live) or by
+   * handleStatusChange (if was armed).
+   */
+  private fun launchYtDlp(streamer: Streamer, manual: Boolean) {
     val key = "${streamer.site}-${streamer.username}"
     if (key in _recording) return
     _recording += key
@@ -177,10 +220,7 @@ class StreamRepository(
           presetDao.getAll().first().find { it.id == id }?.extraArgs
         } ?: ""
 
-      Log.d(
-        TAG,
-        "Recording $key | manual=$manual | format='${streamer.formatSelector}' extra='$extraArgs'",
-      )
+      Log.d(TAG, "Launching yt-dlp for $key | manual=$manual | fmt='${streamer.formatSelector}'")
       RecordingService.start(context, streamer.username)
       try {
         StreamRecorder.startRecording(
@@ -196,18 +236,20 @@ class StreamRepository(
         RecordingService.stop(context)
         _recording -= key
         _manualRecording -= key
-        Log.d(TAG, "Recording coroutine finished for $key")
+        Log.d(TAG, "Recording finished for $key")
       }
     }
   }
 
   fun stopRecording(site: String, username: String) {
     val key = "$site-$username"
-    // StreamRecorder.stopRecording sets a flag + kills yt-dlp, then lets
-    // the coroutine finish salvage naturally — do NOT cancel the job here
+    _armed -= key
+    // StreamRecorder sets stop flag + kills yt-dlp, lets coroutine finish salvage
     StreamRecorder.stopRecording(site, username)
     _recording -= key
     _manualRecording -= key
+    // Stop the armed-wait service if it was running
+    RecordingService.stop(context)
   }
 
   // ── Backup / Restore ──────────────────────────────────────────────────────
@@ -221,11 +263,10 @@ class StreamRepository(
   suspend fun importBackup(uri: Uri): Result<ImportSummary> = runCatching {
     val backup = BackupManager.import(context, uri).getOrThrow()
 
-    // Upsert presets first (so we can resolve preset IDs for streamers)
     val existingPresets = presetDao.getAll().first()
     val existingByName = existingPresets.associateBy { it.name }
-
     val nameToId = mutableMapOf<String, Int>()
+
     backup.presets.forEach { pb ->
       val existing = existingByName[pb.name]
       if (existing != null) {
@@ -237,11 +278,11 @@ class StreamRepository(
       }
     }
 
-    // Upsert streamers
     val existingStreamers = dao.getAll().first()
     val existingKeys = existingStreamers.map { "${it.site}-${it.username}" }.toSet()
     var added = 0
     var updated = 0
+
     backup.streamers.forEach { sb ->
       val resolvedPresetId = sb.presetName?.let { nameToId[it] }
       val key = "${sb.site}-${sb.username}"
@@ -265,15 +306,8 @@ class StreamRepository(
       }
     }
 
-    Log.d(
-      TAG,
-      "Import done: $added added, $updated updated streamers; ${backup.presets.size} presets processed",
-    )
-    ImportSummary(
-      streamersAdded = added,
-      streamersUpdated = updated,
-      presetsProcessed = backup.presets.size,
-    )
+    Log.d(TAG, "Import: $added added, $updated updated, ${backup.presets.size} presets")
+    ImportSummary(added, updated, backup.presets.size)
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

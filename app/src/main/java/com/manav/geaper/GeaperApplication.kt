@@ -2,6 +2,7 @@ package com.manav.geaper
 
 import android.app.Application
 import android.util.Log
+import com.manav.geaper.util.CrashHandler
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import java.util.concurrent.CountDownLatch
@@ -24,6 +25,7 @@ class GeaperApplication : Application() {
 
   override fun onCreate() {
     super.onCreate()
+    CrashHandler.init(this)
 
     // init() extracts ~60 MB of native binaries the first run —
     // must NOT run on the main thread or Android will ANR / throw.
@@ -31,7 +33,7 @@ class GeaperApplication : Application() {
         {
           var ok = false
           try {
-            YoutubeDL.getInstance().init(applicationContext)
+            YoutubeDL.getInstance().init(this)
             // Log.d("GeaperApp", "YoutubeDL initialized")
             ok = true
           } catch (e: Exception) {
@@ -39,7 +41,7 @@ class GeaperApplication : Application() {
           }
 
           try {
-            FFmpeg.getInstance().init(applicationContext)
+            FFmpeg.getInstance().init(this)
             // Log.d("GeaperApp", "FFmpeg initialized")
           } catch (e: Exception) {
             Log.e("GeaperApp", "FFmpeg init failed: ${e.message}", e)

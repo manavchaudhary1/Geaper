@@ -1,6 +1,5 @@
 import java.io.FileInputStream
 import java.util.Properties
-import org.gradle.internal.impldep.org.eclipse.jgit.util.RawCharUtil.trimTrailingWhitespace
 
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -42,23 +41,19 @@ android {
     }
   }
 
-  buildTypes { release { signingConfig = signingConfigs.getByName("release") } }
-
   splits {
     abi {
       isEnable = true
       reset()
-
-      include("arm64-v8a", "armeabi-v7a", "x86_64", "universal")
-
+      include("arm64-v8a", "armeabi-v7a", "x86_64")
       isUniversalApk = true
     }
   }
 
   buildTypes {
     release {
+      signingConfig = signingConfigs.getByName("release")
       isMinifyEnabled = false
-
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
     }
   }
@@ -68,9 +63,31 @@ android {
     targetCompatibility = JavaVersion.VERSION_11
   }
 
-  buildFeatures { compose = true }
+  buildFeatures {
+    compose = true
+    buildConfig = true
+    viewBinding = false
+  }
 
-  packaging { jniLibs { useLegacyPackaging = true } }
+  packaging {
+    jniLibs {
+      useLegacyPackaging = true
+      keepDebugSymbols +=
+        setOf(
+          "**/libpython.so",
+          "**/libpython.zip.so",
+          "**/libffmpeg.so",
+          "**/libffmpeg.zip.so",
+          "**/libffprobe.so",
+          "**/libqjs.so",
+        )
+    }
+  }
+  dependenciesInfo {
+    includeInBundle = false
+    includeInApk = false
+  }
+  buildToolsVersion = "36.0.0"
 }
 
 dependencies {
@@ -102,7 +119,7 @@ dependencies {
   ksp(libs.androidx.room.compiler)
 
   // DataStore
-  implementation("androidx.datastore:datastore-preferences:1.1.1")
+  implementation("androidx.datastore:datastore-preferences:1.2.1")
 
   // Ktor HTTP
   implementation(libs.ktor.client.core)
@@ -117,8 +134,8 @@ dependencies {
   implementation(libs.kotlinx.coroutines)
 
   // yt-dlp + ffmpeg
-  implementation("io.github.junkfood02.youtubedl-android:library:$youtubedlAndroid")
-  implementation("io.github.junkfood02.youtubedl-android:ffmpeg:$youtubedlAndroid")
+  implementation("io.github.junkfood02.youtubedl-android:library:0.17.4")
+  implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.4")
 
   // Testing
   testImplementation(libs.junit)

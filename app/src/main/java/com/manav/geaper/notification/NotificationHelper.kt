@@ -45,7 +45,7 @@ object NotificationHelper {
 
     val notification =
       NotificationCompat.Builder(context, CHANNEL_ID)
-        .setSmallIcon(R.mipmap.ic_launcher) // ← app icon in notification panel
+        .setSmallIcon(R.drawable.ic_notification)
         .setContentTitle(title)
         .setContentText(body)
         .setPriority(NotificationCompat.PRIORITY_HIGH)

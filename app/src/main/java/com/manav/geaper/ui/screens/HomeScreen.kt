@@ -35,16 +35,20 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FilterList
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -115,6 +119,7 @@ private val StatusHidden = Color(0xFFFFD740)
 private val StatusAway = Color(0xFF78909C)
 private val StatusOffline = Color(0xFFEF5350)
 private val RecordRed = Color(0xFFFF1744)
+private val ArmedAmber = Color(0xFFFFB300)
 
 private fun statusColor(s: String) =
   when (s.lowercase()) {
@@ -156,6 +161,7 @@ fun HomeScreen(
   val filterSite by viewModel.filterSite.collectAsState()
   val filterStatus by viewModel.filterStatus.collectAsState()
   val backupResult by viewModel.backupResult.collectAsState()
+  val isWakeLocked by viewModel.isWakeLocked.collectAsState()
 
   var selectedIds by remember { mutableStateOf(setOf<Int>()) }
   val inSelectMode = selectedIds.isNotEmpty()
@@ -245,13 +251,15 @@ fun HomeScreen(
           items(displayed, key = { it.id }) { streamer ->
             val recording = viewModel.isRecording(streamer).also { _ -> tick }
             val isSelected = streamer.id in selectedIds
+            val armed = viewModel.isArmed(streamer).also { _ -> tick }
             StreamerCard(
               streamer = streamer,
               isRecording = recording,
+              isArmed = armed,
               isSelected = isSelected,
               inSelectMode = inSelectMode,
               onRecord = {
-                if (recording) viewModel.stopRecording(streamer)
+                if (recording || armed) viewModel.stopRecording(streamer)
                 else viewModel.startRecording(streamer)
               },
               onEdit = { editTarget = streamer },
@@ -276,15 +284,32 @@ fun HomeScreen(
       exit = scaleOut(),
       modifier = Modifier.align(Alignment.BottomEnd),
     ) {
-      Button(
-        onClick = { showAddSheet = true },
-        modifier = Modifier.padding(20.dp),
-        shape = RoundedCornerShape(16.dp),
-        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 14.dp),
+      Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        modifier = Modifier.padding(20.dp)
       ) {
-        Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
-        Spacer(Modifier.width(6.dp))
-        Text("Add Streamer", fontWeight = FontWeight.Bold)
+        IconButton(
+          onClick = { viewModel.toggleWakeLock() },
+          modifier =
+            Modifier.size(52.dp)
+              .clip(RoundedCornerShape(16.dp))
+              .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+        ) {
+          Icon(
+            if (isWakeLocked) Icons.Default.Lock else Icons.Default.LockOpen,
+            contentDescription = null,
+            tint = if (isWakeLocked) ArmedAmber else MaterialTheme.colorScheme.onSurfaceVariant,
+          )
+        }
+
+        Button(
+          onClick = { showAddSheet = true },
+          shape = RoundedCornerShape(16.dp),
+          contentPadding = PaddingValues(horizontal = 20.dp, vertical = 20.dp),
+        ) {
+          Icon(Icons.Default.Add, null, modifier = Modifier.size(18.dp))
+        }
       }
     }
 
@@ -539,6 +564,16 @@ private fun NormalTopBar(
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             )
           }
+          // WakeLock toggle — keeps CPU alive while screen is off
+          //          IconButton(onClick = onWakeLockToggle) {
+          //            Icon(
+          //              if (isWakeLocked) Icons.Default.FlashlightOn else
+          // Icons.Default.FlashlightOff,
+          //              if (isWakeLocked) "Release wakelock" else "Acquire wakelock",
+          //              tint = if (isWakeLocked) ArmedAmber
+          //              else MaterialTheme.colorScheme.onSurfaceVariant,
+          //            )
+          //          }
 
           // Overflow menu (backup)
           Box {
@@ -795,7 +830,11 @@ private fun FormContent(
   onSave: () -> Unit,
 ) {
   Column(
-    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 32.dp),
+    modifier = Modifier
+      .fillMaxWidth()
+      .verticalScroll(rememberScrollState())
+      .padding(horizontal = 20.dp)
+      .padding(bottom = 32.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -1049,6 +1088,7 @@ private fun FormContent(
 private fun StreamerCard(
   streamer: Streamer,
   isRecording: Boolean,
+  isArmed: Boolean,
   isSelected: Boolean,
   inSelectMode: Boolean,
   onRecord: () -> Unit,
@@ -1069,6 +1109,8 @@ private fun StreamerCard(
               Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(14.dp))
             isRecording ->
               Modifier.border(1.5.dp, RecordRed.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
+            isArmed ->
+              Modifier.border(1.5.dp, ArmedAmber.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
             else -> Modifier
           },
         ),
@@ -1133,6 +1175,7 @@ private fun StreamerCard(
               modifier = Modifier.weight(1f, fill = false),
             )
             if (isRecording) RecordingBadge()
+            if (isArmed) ArmedBadge()
             if (streamer.autoRecord) {
               Surface(
                 shape = RoundedCornerShape(4.dp),
@@ -1202,16 +1245,22 @@ private fun StreamerCard(
             colors =
               IconButtonDefaults.iconButtonColors(
                 containerColor =
-                  if (isRecording) MaterialTheme.colorScheme.errorContainer
-                  else MaterialTheme.colorScheme.surfaceContainerHighest,
+                  when {
+                    isRecording -> MaterialTheme.colorScheme.errorContainer
+                    isArmed -> ArmedAmber.copy(alpha = 0.2f)
+                    else -> MaterialTheme.colorScheme.surfaceContainerHighest
+                  },
                 contentColor =
-                  if (isRecording) MaterialTheme.colorScheme.onErrorContainer
-                  else MaterialTheme.colorScheme.onSurfaceVariant,
+                  when {
+                    isRecording -> MaterialTheme.colorScheme.onErrorContainer
+                    isArmed -> ArmedAmber
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                  },
               ),
           ) {
             Icon(
-              if (isRecording) Icons.Default.Close else Icons.Default.PlayArrow,
-              if (isRecording) "Stop" else "Record",
+              if (isRecording || isArmed) Icons.Default.Close else Icons.Default.PlayArrow,
+              if (isRecording) "Stop" else if (isArmed) "Cancel wait" else "Record",
               modifier = Modifier.size(17.dp),
             )
           }
@@ -1250,6 +1299,31 @@ private fun RecordingBadge() {
         fontSize = 8.sp,
         fontWeight = FontWeight.Bold,
         color = RecordRed,
+        letterSpacing = 0.5.sp,
+        softWrap = false,
+        maxLines = 1
+      )
+    }
+  }
+}
+
+@Composable
+private fun ArmedBadge() {
+  val t = rememberInfiniteTransition(label = "armed")
+  val a by
+    t.animateFloat(1f, 0.3f, infiniteRepeatable(tween(1000), RepeatMode.Reverse), label = "a")
+  Surface(shape = RoundedCornerShape(4.dp), color = ArmedAmber.copy(alpha = 0.15f)) {
+    Row(
+      modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp),
+      verticalAlignment = Alignment.CenterVertically,
+      horizontalArrangement = Arrangement.spacedBy(3.dp),
+    ) {
+      Box(Modifier.size(5.dp).clip(CircleShape).background(ArmedAmber.copy(alpha = a)))
+      Text(
+        "ARMED",
+        fontSize = 8.sp,
+        fontWeight = FontWeight.Bold,
+        color = ArmedAmber,
         letterSpacing = 0.5.sp,
         softWrap = false,
         maxLines = 1
