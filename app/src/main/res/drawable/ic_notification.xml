@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Notification icon for Geaper — a simple record dot + signal arc.
+    Place at: app/src/main/res/drawable/ic_notification.xml
+    Must be monochrome (single color, white/transparent only).
+    Android tints it automatically to match the system theme.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- Outer signal arc (top) -->
+    <path
+        android:pathData="M5.64,4.93 A9,9 0,0,1 18.36,4.93"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Middle arc -->
+    <path
+        android:pathData="M7.76,7.05 A6,6 0,0,1 16.24,7.05"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Inner arc -->
+    <path
+        android:pathData="M9.88,9.17 A3,3 0,0,1 14.12,9.17"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Record dot (centre) -->
+    <path
+        android:pathData="M12,12 m-2.5,0 a2.5,2.5 0,1,0 5,0 a2.5,2.5 0,1,0 -5,0"
+        android:fillColor="#FFFFFF" />
+
+    <!-- Vertical stem from dot to bottom -->
+    <path
+        android:pathData="M12,14.5 L12,19"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent" />
+
+    <!-- Base bar -->
+    <path
+        android:pathData="M9,19 L15,19"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.8"
+        android:strokeLineCap="round"
+        android:fillColor="@android:color/transparent" />
+
+</vector>
