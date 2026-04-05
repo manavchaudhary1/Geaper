@@ -31,6 +31,7 @@ object StreamRecorder {
       "camsoda" -> "https://www.camsoda.com/$username"
       else -> throw IllegalArgumentException("Unknown site: $site")
     }
+
   suspend fun startRecording(
     context: Context,
     outputDir: String,
@@ -65,6 +66,7 @@ object StreamRecorder {
             segmentMinutes = segmentMinutes,
             resolvedFormat = resolvedFormat,
             extraArgs = extraArgs,
+            site = site,
             onProgress = onProgress,
           )
         } else {
@@ -75,6 +77,7 @@ object StreamRecorder {
             username = username,
             resolvedFormat = resolvedFormat,
             extraArgs = extraArgs,
+            site = site,
             onProgress = onProgress,
           )
         }
@@ -95,6 +98,7 @@ object StreamRecorder {
     segmentMinutes: Int,
     resolvedFormat: String,
     extraArgs: String,
+    site: String,
     onProgress: (String) -> Unit,
   ) =
     withContext(Dispatchers.IO) {
@@ -104,13 +108,13 @@ object StreamRecorder {
 
       while (isActive && !stopFlag.get()) {
         val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-        val outputFile = "${dir.absolutePath}/${username}_${timestamp}_seg${segmentIndex}.mp4"
+        val outputFile = "${dir.absolutePath}/${username}_${timestamp}_seg${segmentIndex}"
         Log.d(TAG, "Starting segment $segmentIndex → $outputFile")
 
         Thread {
             try {
               YoutubeDL.getInstance().execute(
-                buildRequest(url, outputFile, resolvedFormat, extraArgs),
+                buildRequest(url, outputFile, resolvedFormat, extraArgs, site),
                 processId,
               ) { _, _, line ->
                 if (line.isNotBlank()) {
@@ -166,16 +170,17 @@ object StreamRecorder {
     username: String,
     resolvedFormat: String,
     extraArgs: String,
+    site: String,
     onProgress: (String) -> Unit,
   ) =
     withContext(Dispatchers.IO) {
       val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-      val outputPath = "${dir.absolutePath}/${username}_${timestamp}_%(ext)s"
+      val outputPath = "${dir.absolutePath}/${username}_${timestamp}.%(ext)s"
       Log.d(TAG, "Continuous recording → $outputPath")
 
       try {
         YoutubeDL.getInstance().execute(
-          buildRequest(url, outputPath, resolvedFormat, extraArgs),
+          buildRequest(url, outputPath, resolvedFormat, extraArgs, site),
           processId,
         ) { _, _, line ->
           if (line.isNotBlank()) {
@@ -219,7 +224,7 @@ object StreamRecorder {
    * If the user picks e.g. "≤480p", we generate:
    * bestvideo[height<=480]+bestaudio/bestvideo[height<=720]+bestaudio/bestvideo+bestaudio/best
    *
-   * This means yt-dlp tries 480p first, then 720p, then best available. So if the streamer only
+   * This means yt-dlp tries 480p first, then 720p, then the best available. So if the streamer only
    * broadcasts in 720p, it won't fail — it falls back.
    *
    * For "bestaudio/best" (audio-only) we keep it as-is since there's no sensible video fallback to
@@ -251,20 +256,31 @@ object StreamRecorder {
     outputPath: String,
     resolvedFormat: String,
     extraArgs: String,
-  ): YoutubeDLRequest =
-    YoutubeDLRequest(url).apply {
-      addOption("--no-update")
-      addOption("--retries", "10")
-      addOption("--fragment-retries", "10")
-      addOption("--retry-sleep", "5")
-      addOption("--no-playlist")
-      addOption("-f", resolvedFormat)
-      addOption("--merge-output-format", "mp4")
-      addOption("-o", outputPath)
-      if (extraArgs.isNotBlank()) {
-        extraArgs.trim().split(Regex("\\s+")).forEach { addOption(it) }
+    site: String = "",
+  ): YoutubeDLRequest {
+    val req =
+      YoutubeDLRequest(url).apply {
+        addOption("--no-update")
+        addOption("--ignore-config")
+        addOption("--retries", "10")
+        addOption("--fragment-retries", "10")
+        addOption("--retry-sleep", "5")
+        addOption("--no-playlist")
+        addOption("-f", resolvedFormat)
+        addOption("--merge-output-format", "mp4")
+        addOption("-o", outputPath)
+        if (site == "camsoda") {
+          Log.d(TAG, "Site is camsoda adding picky ext")
+          addOption("--downloader-arg", "ffmpeg_i1:-extension_picky 0")
+          addOption("--downloader-arg", "ffmpeg_i2:-extension_picky 0")
+        }
+        if (extraArgs.isNotBlank()) {
+          extraArgs.trim().split(Regex("\\s+")).forEach { addOption(it) }
+        }
       }
-    }
+    Log.d(TAG, "yt-dlp command: ${req.buildCommand()}")
+    return req
+  }
 
   private fun salvagePartFiles(dir: File, username: String) {
     dir.listFiles()?.forEach { file ->

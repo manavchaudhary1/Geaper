@@ -830,11 +830,11 @@ private fun FormContent(
   onSave: () -> Unit,
 ) {
   Column(
-    modifier = Modifier
-      .fillMaxWidth()
-      .verticalScroll(rememberScrollState())
-      .padding(horizontal = 20.dp)
-      .padding(bottom = 32.dp),
+    modifier =
+      Modifier.fillMaxWidth()
+        .verticalScroll(rememberScrollState())
+        .padding(horizontal = 20.dp)
+        .padding(bottom = 32.dp),
     verticalArrangement = Arrangement.spacedBy(14.dp),
   ) {
     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)

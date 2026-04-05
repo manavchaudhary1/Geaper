@@ -134,8 +134,8 @@ dependencies {
   implementation(libs.kotlinx.coroutines)
 
   // yt-dlp + ffmpeg
-  implementation("io.github.junkfood02.youtubedl-android:library:0.17.4")
-  implementation("io.github.junkfood02.youtubedl-android:ffmpeg:0.17.4")
+  implementation("io.github.junkfood02.youtubedl-android:library:$youtubedlAndroid")
+  implementation("io.github.junkfood02.youtubedl-android:ffmpeg:$youtubedlAndroid")
 
   // Testing
   testImplementation(libs.junit)

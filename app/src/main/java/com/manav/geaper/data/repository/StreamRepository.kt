@@ -109,14 +109,21 @@ class StreamRepository(
     val wmToken = prefs.cbWmToken.first()
 
     val cbStatus = HashMap<String, String>()
-    cbApi.getOnlineRooms(wmToken).forEach { cbStatus[it.username] = it.current_show ?: "offline" }
-
+    try {
+      cbApi.getOnlineRooms(wmToken).forEach { cbStatus[it.username] = it.current_show ?: "offline" }
+    } catch (e: Exception) {
+      Log.e(TAG, "Chaturbate API failed: ${e.message}")
+    }
     streamers
       .filter { it.site == "chaturbate" }
       .forEach { streamer ->
         handleStatusChange(streamer, cbStatus[streamer.username] ?: "offline")
       }
-    updateCamsoda(streamers)
+    try {
+      updateCamsoda(streamers)
+    } catch (e: Exception) {
+      Log.e(TAG, "Camsoda update failed: ${e.message}")
+    }
 
     Log.d(TAG, "Monitoring cycle finished")
     debugPrintDb()

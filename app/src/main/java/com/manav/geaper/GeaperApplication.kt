@@ -34,19 +34,17 @@ class GeaperApplication : Application() {
           var ok = false
           try {
             YoutubeDL.getInstance().init(this)
-            // Log.d("GeaperApp", "YoutubeDL initialized")
+            Log.d("GeaperApp", "YoutubeDL initialized")
             ok = true
           } catch (e: Exception) {
             Log.e("GeaperApp", "YoutubeDL init failed: ${e.message}", e)
           }
-
           try {
             FFmpeg.getInstance().init(this)
-            // Log.d("GeaperApp", "FFmpeg initialized")
+            Log.d("GeaperApp", "FFmpeg initialized")
           } catch (e: Exception) {
             Log.e("GeaperApp", "FFmpeg init failed: ${e.message}", e)
           }
-
           ytDlpReady = ok
           initLatch.countDown()
         },
