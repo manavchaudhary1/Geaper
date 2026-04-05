@@ -29,9 +29,6 @@ jobs:
       - name: Run spotlessApply
         run: ./gradlew spotlessApply
 
-      - name: Run build
-        run: ./gradlew build
-
       - name: Run assembleRelease
         run: ./gradlew assembleRelease
         env:
