@@ -19,7 +19,9 @@ jobs:
 
       - name: Decode keystore
         run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/keystore.jks
+          mkdir -p ${{ github.workspace }}/app/keystore
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > ${{ github.workspace }}/app/keystore/geaper-release.jks
+
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
@@ -33,7 +35,7 @@ jobs:
       - name: Run assembleRelease
         run: ./gradlew assembleRelease
         env:
-          KEYSTORE_PATH: ${{ github.workspace }}/keystore.jks
+          KEYSTORE_PATH: ${{ github.workspace }}/app/keystore/geaper-release.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
